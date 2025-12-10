@@ -1,0 +1,43 @@
+const express = require("express");
+const router = express.Router();
+const Booking = require("../model/Booking");
+
+// Create booking
+router.post("/", async (req, res) => {
+  try {
+    const { cabinId, name, mobile, startDate, startTime, endDate, endTime } = req.body;
+
+    const booking = new Booking({
+      cabinId,
+      name,
+      mobile,
+      startDate,
+      startTime,
+      endDate,
+      endTime,
+    });
+
+    await booking.save();
+    res.status(201).json({ message: "Booking saved successfully", booking });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Failed to save booking" });
+  }
+});
+
+
+
+// Get all bookings
+router.get("/", async (req, res) => {
+  try {
+    // Populate cabin details if needed
+    const bookings = await Booking.find().populate("cabinId", "name address capacity price");
+    res.status(200).json(bookings);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+module.exports = router;

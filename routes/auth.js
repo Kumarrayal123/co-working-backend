@@ -210,18 +210,7 @@ router.post(
     try {
       const { name, email, password, mobile, address } = req.body;
 
-      // const user = new User({
-      //   name,
-      //   email,
-      //   password,
-      //   mobile,
-      //   address,
-      //   adharCard: req.files?.adharCard?.[0]?.path || null,
-      //   panCard: req.files?.panCard?.[0]?.path || null,
-      //   mbbsCertificate: req.files?.mbbsCertificate?.[0]?.path || null,
-      //   pmcRegistration: req.files?.pmcRegistration?.[0]?.path || null,
-      //   nmrId: req.files?.nmrId?.[0]?.path || null,
-      // });
+   
      const hashedPassword = await bcrypt.hash(password, 10);
       const user = new User({
   name,
@@ -247,27 +236,24 @@ router.post(
 );
 
 
-// All Users
-router.get("/all-users", async (req, res) => {
+// Get all registered users
+router.get("/all", async (req, res) => {
   try {
-    const users = await User.find().select("-password").lean();
-
-    const formattedUsers = users.map((u) => ({
-      ...u,
-      documents: [
-        u.adharCard,
-        u.panCard,
-        u.mbbsCertificate,
-        u.pmcRegistration,
-        u.nmrId,
-      ].filter(Boolean), // removes null or undefined
-    }));
-
-    res.json(formattedUsers);
+    const users = await User.find().select("-password"); // hide password
+    res.json(users);
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: err.message });
   }
 });
+
+
+
+
+
+
+
+// All Users
+
 
 // Login
 router.post("/login", async (req, res) => {

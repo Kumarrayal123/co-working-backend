@@ -84,6 +84,21 @@ router.post("/", upload.array("images", 5), async (req, res) => {
   }
 });
 
+// Get Cabin by Id
+router.get("/:id", async (req, res) => {
+  try {
+    const cabin = await Cabin.findById(req.params.id);
+    res.json(cabin);
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+
+
+
+
 
 
 // GET ALL CABINS
