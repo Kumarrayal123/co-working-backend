@@ -1,16 +1,26 @@
+
 const express = require("express");
 const router = express.Router();
 const Booking = require("../model/Booking");
+const User = require("../model/User");
 
 // Create booking
-router.post("/", async (req, res) => {
+// Create booking
+router.post("/createbooking/:userId", async (req, res) => {
   try {
-    const { cabinId, name, mobile, startDate, startTime, endDate, endTime } = req.body;
+    const { userId } = req.params; // Get userId from params
+    const { cabinId, startDate, startTime, endDate, endTime } = req.body; // Get other booking details from request body
 
+    // Fetch user details from User model using the userId
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Create the booking
     const booking = new Booking({
       cabinId,
-      name,
-      mobile,
+      userId,
       startDate,
       startTime,
       endDate,
@@ -34,6 +44,29 @@ router.get("/", async (req, res) => {
     // Populate cabin details if needed
     const bookings = await Booking.find().populate("cabinId", "name address capacity price");
     res.status(200).json(bookings);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+
+
+// Get all bookings for a specific user
+router.get("/userbookings/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params; // Get userId from URL parameter
+
+    // Fetch all bookings associated with this user
+    const bookings = await Booking.find({ userId })
+      .populate("cabinId", "name address capacity price images") // Optionally populate cabin details
+      .exec();
+
+    if (bookings.length === 0) {
+      return res.status(404).json({ message: "No bookings found for this user" });
+    }
+
+    res.status(200).json({ message: "Bookings fetched successfully", bookings });
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: "Failed to fetch bookings" });

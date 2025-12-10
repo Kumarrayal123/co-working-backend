@@ -210,21 +210,26 @@ router.post(
     try {
       const { name, email, password, mobile, address } = req.body;
 
-   
-     const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await bcrypt.hash(password, 10);
       const user = new User({
-  name,
-  email,
-  password: hashedPassword,
-  mobile,
-  address,
-  adharCard: req.files?.adharCard?.[0]?.path.replace(/\\/g, "/") || null,
-  panCard: req.files?.panCard?.[0]?.path.replace(/\\/g, "/") || null,
-  mbbsCertificate: req.files?.mbbsCertificate?.[0]?.path.replace(/\\/g, "/") || null,
-  pmcRegistration: req.files?.pmcRegistration?.[0]?.path.replace(/\\/g, "/") || null,
-  nmrId: req.files?.nmrId?.[0]?.path.replace(/\\/g, "/") || null,
-});
+        name,
+        email,
+        password: hashedPassword,
+        mobile,
+        address,
+        adharCard: req.files?.adharCard?.[0]?.path.replace(/\\/g, "/") || null,
+        panCard: req.files?.panCard?.[0]?.path.replace(/\\/g, "/") || null,
+        mbbsCertificate: req.files?.mbbsCertificate?.[0]?.path.replace(/\\/g, "/") || null,
+        pmcRegistration: req.files?.pmcRegistration?.[0]?.path.replace(/\\/g, "/") || null,
+        nmrId: req.files?.nmrId?.[0]?.path.replace(/\\/g, "/") || null,
 
+        // Default statuses for each document
+        adharCardStatus: "pending",
+        panCardStatus: "pending",
+        mbbsCertificateStatus: "pending",
+        pmcRegistrationStatus: "pending",
+        nmrIdStatus: "pending",
+      });
 
       await user.save();
       res.json({ message: "User registered successfully", user });
@@ -287,6 +292,67 @@ router.post("/login", async (req, res) => {
     });
 
   } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
+
+// Update Document and User Status
+router.put("/update-status/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params; // Get userId from params
+    const { 
+      adharCardStatus, 
+      panCardStatus, 
+      mbbsCertificateStatus, 
+      pmcRegistrationStatus, 
+      nmrIdStatus,
+      status // Overall user status
+    } = req.body; // Get the status updates from the request body
+
+    // Validate the input statuses
+    const validStatuses = ["pending", "approved", "rejected"];
+    const statusUpdates = {};
+
+    // Validate and set the individual document statuses
+    if (adharCardStatus && validStatuses.includes(adharCardStatus)) {
+      statusUpdates.adharCardStatus = adharCardStatus;
+    }
+    if (panCardStatus && validStatuses.includes(panCardStatus)) {
+      statusUpdates.panCardStatus = panCardStatus;
+    }
+    if (mbbsCertificateStatus && validStatuses.includes(mbbsCertificateStatus)) {
+      statusUpdates.mbbsCertificateStatus = mbbsCertificateStatus;
+    }
+    if (pmcRegistrationStatus && validStatuses.includes(pmcRegistrationStatus)) {
+      statusUpdates.pmcRegistrationStatus = pmcRegistrationStatus;
+    }
+    if (nmrIdStatus && validStatuses.includes(nmrIdStatus)) {
+      statusUpdates.nmrIdStatus = nmrIdStatus;
+    }
+
+    // Validate and set the overall user status
+    // Allow "active" as a valid status for the user
+    const validUserStatuses = ["pending", "approved", "rejected", "active"];
+    if (status && validUserStatuses.includes(status)) {
+      statusUpdates.status = status; // Update user status if provided
+    }
+
+    // Check if any valid statuses are passed in the request
+    if (Object.keys(statusUpdates).length === 0) {
+      return res.status(400).json({ message: "No valid status provided for update." });
+    }
+
+    // Find user and update the status fields
+    const user = await User.findByIdAndUpdate(userId, statusUpdates, { new: true });
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    res.json({ message: "User status updated successfully", user });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 });
