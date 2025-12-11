@@ -3,6 +3,7 @@ const router = express.Router();
 const Cabin = require("../model/cabin");
 const multer = require("multer");
 const path = require("path");
+const auth = require("../middleware/auth");
 
 // Multer setup
 const storage = multer.diskStorage({
@@ -16,68 +17,27 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// CREATE CABIN
-// router.post("/", upload.array("images", 5), async (req, res) => {
-//   try {
-//     const { name, description, capacity, address } = req.body;
-//     const images = req.files.map((file) => file.path); // save paths in DB
-
-//     const newCabin = new Cabin({
-//       name,
-//       description,
-//       capacity,
-//       address,
-//       images,
-//     });
-
-//     await newCabin.save();
-//     res.status(201).json({ message: "Cabin added successfully", cabin: newCabin });
-//   } catch (err) {
-//     console.log(err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
 
 
-// router.post("/", upload.array("images", 5), async (req, res) => {
-//   try {
-//     const { name, description, capacity, address, userId } = req.body;
-//     const images = req.files.map((file) => file.path);
-
-//     const newCabin = new Cabin({
-//       name,
-//       description,
-//       capacity,
-//       address,
-//       images,
-//       userId,   // ⭐ save user id
-//     });
-
-//     await newCabin.save();
-//     res.status(201).json({ message: "Cabin added successfully", cabin: newCabin });
-//   } catch (err) {
-//     console.log(err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-router.post("/", upload.array("images", 5), async (req, res) => {
+router.post("/", auth, upload.array("images", 5), async (req, res) => {
   try {
-    const { name, description, capacity, address, userId } = req.body;
+    const { name, description, capacity, address, price } = req.body;
 
     const images = req.files.map((file) => file.path);
 
     const newCabin = new Cabin({
+      owner: req.user.id,     // ⭐ correct field
       name,
       description,
       capacity,
       address,
+      price,
       images,
-      userId
     });
 
     await newCabin.save();
     res.status(201).json({ message: "Cabin added successfully", cabin: newCabin });
+
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Server error" });
@@ -96,6 +56,26 @@ router.get("/:id", async (req, res) => {
 });
 
 
+router.get("/user", auth, async (req, res) => {
+  try {
+    console.log("Fetching cabins for user:", req.user.id);
+    const cabins = await Cabin.find({ owner: req.user.id });
+    console.log("Found cabins count:", cabins.length);
+    if (cabins.length > 0) {
+      console.log("Sample cabin owner:", cabins[0].owner);
+    }
+
+    // Check if the owner field is ObjectId or String in DB
+    // This debug will help verify schema alignment
+
+    res.json(cabins);
+  } catch (err) {
+    console.error("Error fetching user cabins:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 
 
 
@@ -110,26 +90,6 @@ router.get("/", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-// router.get("/user/:Id", async (req, res) => {
-//   try {
-//     const cabins = await Cabin.find({ userId: req.params.userId }).sort({ createdAt: -1 });
-//     res.json(cabins);
-//   } catch (err) {
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
-router.get("/", async (req, res) => {
-  try {
-    const cabins = await Cabin.find().sort({ createdAt: -1 });
-    res.json(cabins);
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-
 
 module.exports = router;
 
