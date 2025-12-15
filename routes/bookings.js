@@ -181,17 +181,32 @@ router.post("/createbooking/:userId", async (req, res) => {
 });
 
 // Get all bookings
+// router.get("/", async (req, res) => {
+//   try {
+//     const bookings = await Booking.find()
+//       .populate("cabinId", "name address capacity price images")
+//       .sort({ createdAt: -1 });
+//     res.status(200).json({ bookings });
+//   } catch (error) {
+//     console.log(error);
+//     res.status(500).json({ error: "Failed to fetch bookings" });
+//   }
+// });
+
 router.get("/", async (req, res) => {
   try {
     const bookings = await Booking.find()
       .populate("cabinId", "name address capacity price images")
+      .populate("userId", "name mobile email")   // 👈 ADD THIS LINE
       .sort({ createdAt: -1 });
+
     res.status(200).json({ bookings });
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: "Failed to fetch bookings" });
   }
 });
+
 
 // Get bookings by userId
 router.get("/userbookings/:userId", async (req, res) => {
