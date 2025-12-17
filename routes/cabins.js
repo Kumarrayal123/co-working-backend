@@ -119,6 +119,10 @@ const upload = multer({ storage });
 // ======================
 router.post("/", auth, upload.array("images", 5), async (req, res) => {
   try {
+    console.log("Add Cabin Request Body:", req.body);
+    console.log("Add Cabin User:", req.user);
+    console.log("Add Cabin Files:", req.files);
+
     const { name, description, capacity, address, price } = req.body;
 
     const amenities = req.body.amenities
@@ -145,8 +149,13 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       cabin: newCabin,
     });
   } catch (err) {
+<<<<<<< HEAD
     console.error(err);
     res.status(500).json({ message: "Server error" });
+=======
+    console.log("ADD CABIN ERROR:", err); // Explicitly log the error
+    res.status(500).json({ message: "Server error", error: err.message });
+>>>>>>> 1082581f89b862dbbe59cad15c5cf1b3648be10d
   }
 });
 
