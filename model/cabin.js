@@ -46,13 +46,10 @@ const cabinSchema = new mongoose.Schema({
 
   name: { type: String, required: true },
   description: { type: String },
-<<<<<<< HEAD
   capacity: { type: Number, required: true },
-=======
-  capacity: { type: String, required: true },
   price: { type: Number, required: true }, // Added price
   images: { type: [String] },
->>>>>>> 1082581f89b862dbbe59cad15c5cf1b3648be10d
+
   address: { type: String, required: true },
   price: { type: Number },
 
