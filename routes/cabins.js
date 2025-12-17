@@ -121,15 +121,20 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
   try {
     const { name, description, capacity, address, price } = req.body;
 
-    const images = req.files.map((file) => file.path);
+    const amenities = req.body.amenities
+      ? JSON.parse(req.body.amenities)
+      : {};
+
+    const images = req.files?.map((file) => file.path) || [];
 
     const newCabin = new Cabin({
-      owner: req.user.id, // ✅ correct
+      owner: req.user.id,
       name,
       description,
       capacity,
       address,
       price,
+      amenities,
       images,
     });
 
@@ -140,10 +145,11 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       cabin: newCabin,
     });
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 // ======================
@@ -196,25 +202,27 @@ router.get("/", async (req, res) => {
 // ======================
 router.put("/:id", auth, upload.array("images", 5), async (req, res) => {
   try {
-    const { name, description, capacity, address, price } = req.body;
-
     const cabin = await Cabin.findById(req.params.id);
 
     if (!cabin) {
       return res.status(404).json({ message: "Cabin not found" });
     }
 
-    // ✅ Owner check
     if (cabin.owner.toString() !== req.user.id) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Update fields
+    const { name, description, capacity, address, price } = req.body;
+
     cabin.name = name || cabin.name;
     cabin.description = description || cabin.description;
     cabin.capacity = capacity || cabin.capacity;
     cabin.address = address || cabin.address;
     cabin.price = price || cabin.price;
+
+    if (req.body.amenities) {
+      cabin.amenities = JSON.parse(req.body.amenities);
+    }
 
     if (req.files && req.files.length > 0) {
       cabin.images = req.files.map((file) => file.path);
@@ -228,6 +236,7 @@ router.put("/:id", auth, upload.array("images", 5), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // ======================
 // DELETE CABIN
