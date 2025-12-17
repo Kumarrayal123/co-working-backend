@@ -153,6 +153,33 @@ const Booking = require("../model/Booking");
 const User = require("../model/User");
 
 // Create a booking
+// router.post("/createbooking/:userId", async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+//     const { cabinId, startDate, startTime, endDate, endTime } = req.body;
+
+//     const user = await User.findById(userId);
+//     if (!user) {
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     const booking = new Booking({
+//       cabinId,
+//       userId,
+//       startDate,
+//       startTime,
+//       endDate,
+//       endTime,
+//     });
+
+//     await booking.save();
+//     res.status(201).json({ message: "Booking saved successfully", booking });
+//   } catch (error) {
+//     console.log(error);
+//     res.status(500).json({ error: "Failed to save booking" });
+//   }
+// });
+
 router.post("/createbooking/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -163,6 +190,23 @@ router.post("/createbooking/:userId", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    // ⏱ Convert date + time to Date objects
+    const start = new Date(`${startDate}T${startTime}`);
+    const end = new Date(`${endDate}T${endTime}`);
+
+    if (end <= start) {
+      return res.status(400).json({ error: "Invalid date/time selection" });
+    }
+
+    // 🧮 Calculate total hours
+    const diffMs = end - start;
+    const totalHours = Math.ceil(diffMs / (1000 * 60 * 60));
+
+    // 💰 Price logic
+    const pricePerHour = 5000;
+    const totalPrice = totalHours * pricePerHour;
+
+    // ✅ Save booking
     const booking = new Booking({
       cabinId,
       userId,
@@ -170,28 +214,24 @@ router.post("/createbooking/:userId", async (req, res) => {
       startTime,
       endDate,
       endTime,
+      totalHours,
+      totalPrice,
     });
 
     await booking.save();
-    res.status(201).json({ message: "Booking saved successfully", booking });
+
+    res.status(201).json({
+      message: "Booking saved successfully",
+      booking,
+    });
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: "Failed to save booking" });
   }
 });
 
-// Get all bookings
-// router.get("/", async (req, res) => {
-//   try {
-//     const bookings = await Booking.find()
-//       .populate("cabinId", "name address capacity price images")
-//       .sort({ createdAt: -1 });
-//     res.status(200).json({ bookings });
-//   } catch (error) {
-//     console.log(error);
-//     res.status(500).json({ error: "Failed to fetch bookings" });
-//   }
-// });
+
+
 
 router.get("/", async (req, res) => {
   try {
