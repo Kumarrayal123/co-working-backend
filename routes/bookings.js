@@ -183,30 +183,39 @@ const User = require("../model/User");
 router.post("/createbooking/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const { cabinId, startDate, startTime, endDate, endTime } = req.body;
+    const {
+      cabinId,
+      startDate,
+      startTime,
+      endDate,
+      endTime
+    } = req.body;
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    const newStart = new Date(`${startDate}T${startTime}`);
+    const newEnd = new Date(`${endDate}T${endTime}`);
+
+    if (newEnd <= newStart) {
+      return res.status(400).json({ error: "Invalid date/time" });
     }
 
-    // ⏱ Convert date + time to Date objects
-    const start = new Date(`${startDate}T${startTime}`);
-    const end = new Date(`${endDate}T${endTime}`);
+    // 🔥 OVERLAP CHECK (VERY IMPORTANT)
+    const existingBookings = await Booking.find({ cabinId });
 
-    if (end <= start) {
-      return res.status(400).json({ error: "Invalid date/time selection" });
+    for (let booking of existingBookings) {
+      const bookedStart = new Date(`${booking.startDate}T${booking.startTime}`);
+      const bookedEnd = new Date(`${booking.endDate}T${booking.endTime}`);
+
+      if (newStart < bookedEnd && newEnd > bookedStart) {
+        return res.status(400).json({
+          error: "Cabin already booked for this time slot"
+        });
+      }
     }
 
-    // 🧮 Calculate total hours
-    const diffMs = end - start;
+    const diffMs = newEnd - newStart;
     const totalHours = Math.ceil(diffMs / (1000 * 60 * 60));
+    const totalPrice = totalHours * 5000;
 
-    // 💰 Price logic
-    const pricePerHour = 5000;
-    const totalPrice = totalHours * pricePerHour;
-
-    // ✅ Save booking
     const booking = new Booking({
       cabinId,
       userId,
@@ -215,20 +224,23 @@ router.post("/createbooking/:userId", async (req, res) => {
       endDate,
       endTime,
       totalHours,
-      totalPrice,
+      totalPrice
     });
 
     await booking.save();
 
     res.status(201).json({
-      message: "Booking saved successfully",
-      booking,
+      message: "Booking confirmed",
+      booking
     });
-  } catch (error) {
-    console.log(error);
-    res.status(500).json({ error: "Failed to save booking" });
+
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Booking failed" });
   }
 });
+
+
 
 
 
