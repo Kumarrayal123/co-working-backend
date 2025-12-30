@@ -16,9 +16,10 @@ const mongoose = require("mongoose");
 const userSchema = new mongoose.Schema({
   name: { type: String, },
   email: { type: String, },
-  password: { type: String,},
+  password: { type: String, },
   mobile: { type: String, },
   address: { type: String, },
+  role: { type: String, enum: ["user", "doctor"], default: "user" },
 
   // Doctor Verification Documents
   adharCard: { type: String, },          // file/url

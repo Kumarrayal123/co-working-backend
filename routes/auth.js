@@ -208,31 +208,45 @@ router.post(
   ]),
   async (req, res) => {
     try {
-      const { name, email, password, mobile, address } = req.body;
+      const { name, email, password, mobile, address, role } = req.body;
 
       const hashedPassword = await bcrypt.hash(password, 10);
-      const user = new User({
+
+      const isDoctor = role === "doctor";
+
+      const userData = {
         name,
         email,
         password: hashedPassword,
         mobile,
         address,
-        adharCard: req.files?.adharCard?.[0]?.path.replace(/\\/g, "/") || null,
-        panCard: req.files?.panCard?.[0]?.path.replace(/\\/g, "/") || null,
-        mbbsCertificate: req.files?.mbbsCertificate?.[0]?.path.replace(/\\/g, "/") || null,
-        pmcRegistration: req.files?.pmcRegistration?.[0]?.path.replace(/\\/g, "/") || null,
-        nmrId: req.files?.nmrId?.[0]?.path.replace(/\\/g, "/") || null,
+        role: role || "user",
+        status: isDoctor ? "pending" : "active"
+      };
 
-        // Default statuses for each document
-        adharCardStatus: "pending",
-        panCardStatus: "pending",
-        mbbsCertificateStatus: "pending",
-        pmcRegistrationStatus: "pending",
-        nmrIdStatus: "pending",
-      });
+      if (isDoctor) {
+        userData.adharCard = req.files?.adharCard?.[0]?.path.replace(/\\/g, "/") || null;
+        userData.panCard = req.files?.panCard?.[0]?.path.replace(/\\/g, "/") || null;
+        userData.mbbsCertificate = req.files?.mbbsCertificate?.[0]?.path.replace(/\\/g, "/") || null;
+        userData.pmcRegistration = req.files?.pmcRegistration?.[0]?.path.replace(/\\/g, "/") || null;
+        userData.nmrId = req.files?.nmrId?.[0]?.path.replace(/\\/g, "/") || null;
 
+        userData.adharCardStatus = "pending";
+        userData.panCardStatus = "pending";
+        userData.mbbsCertificateStatus = "pending";
+        userData.pmcRegistrationStatus = "pending";
+        userData.nmrIdStatus = "pending";
+      }
+
+      const user = new User(userData);
       await user.save();
-      res.json({ message: "User registered successfully", user });
+
+      res.json({
+        message: isDoctor
+          ? "Doctor registered successfully. Wait for admin approval."
+          : "Registration successful. You can login now.",
+        user
+      });
 
     } catch (err) {
       res.status(500).json({ message: err.message });
@@ -302,11 +316,11 @@ router.post("/login", async (req, res) => {
 router.put("/update-status/:userId", async (req, res) => {
   try {
     const { userId } = req.params; // Get userId from params
-    const { 
-      adharCardStatus, 
-      panCardStatus, 
-      mbbsCertificateStatus, 
-      pmcRegistrationStatus, 
+    const {
+      adharCardStatus,
+      panCardStatus,
+      mbbsCertificateStatus,
+      pmcRegistrationStatus,
       nmrIdStatus,
       status // Overall user status
     } = req.body; // Get the status updates from the request body
