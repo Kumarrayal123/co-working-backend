@@ -132,15 +132,15 @@
 
 
 // // GET ALL USERS
-// router.get("/users", async (req, res) => {
-//   try {
-//     const users = await User.find({}, "-password"); // hide password
-//     res.json(users);
-//   } catch (err) {
-//     console.log("GET USERS ERROR:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
+// // router.get("/users", async (req, res) => {
+// //   try {
+// //     const users = await User.find({}, "-password"); // hide password
+// //     res.json(users);
+// //   } catch (err) {
+// //     console.log("GET USERS ERROR:", err);
+// //     res.status(500).json({ message: "Server error" });
+// //   }
+// // });
 
 
 // module.exports = router;
@@ -279,34 +279,31 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check user exists
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "User not found" });
 
-    // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch)
-      return res.status(400).json({ message: "Incorrect password" });
+    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
 
-    // Create token
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
+    // Return user data including _id
     res.json({
-      message: "Login successful",
-      token,
+      message: "Login Successful",
+      token: jwt.sign(
+        { userId: user._id },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      ),
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
-        email: user.email
+        email: user.email,
+        mobile: user.mobile,
+        address: user.address
       }
     });
-
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 

@@ -122,12 +122,33 @@ router.get("/", async (req, res) => {
 });
 
 // ======================
-// 4. GET BOOKINGS BY USER ID (CUSTOMER)
+// 4. GET BOOKINGS BY USER ID (CUSTOMER) - UPDATED FOR AUTH TOKEN
 // ======================
+router.get("/user", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log("-----------------------------------------");
+    console.log(`📡 API REQUEST: GET /api/bookings/user`);
+    console.log(`👤 Current Session userId: ${userId}`);
+    console.log("-----------------------------------------");
+
+    const bookings = await Booking.find({ userId })
+      .populate("cabinId", "name address capacity price images")
+      .sort({ createdAt: -1 });
+
+    console.log(`✅ Bookings: Found ${bookings.length} bookings for user ${userId}`);
+    res.status(200).json({ bookings });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+// Using the old route as fallback or for specific user fetch if needed (optional)
 router.get("/userbookings/:userId", async (req, res) => {
+  // ... existing logic ...
   try {
     const { userId } = req.params;
-
     const bookings = await Booking.find({ userId })
       .populate("cabinId", "name address capacity price images")
       .sort({ createdAt: -1 });

@@ -31,7 +31,7 @@ mongoose.connect(process.env.MONGO_URL)
   .catch((err) => console.error("CRITICAL: MongoDB Connection Failed:", err));
 
 // Start Server
-const PORT = 5050;
+const PORT = 5000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server fully started on http://localhost:${PORT}`);
 }).on('error', (err) => {

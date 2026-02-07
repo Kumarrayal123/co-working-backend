@@ -1,41 +1,48 @@
 const express = require("express");
 const router = express.Router();
+const axios = require("axios");
 const bcrypt = require("bcryptjs");
 const User = require("../model/User");
 const Admin = require("../model/Admin");  // NEW MODEL
 const jwt = require("jsonwebtoken");
 
-// ADMIN LOGIN
+// ADMIN LOGIN (PROXY TO EXTERNAL API)
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log("🔄 Proxying Admin Login to: https://api.timelyhealth.in/api/admin/login");
 
-    const admin = await Admin.findOne({ email });
-    if (!admin) return res.status(400).json({ message: "Admin not found" });
+    try {
+      // Use axios for reliable HTTP request
+      const response = await axios.post("https://api.timelyhealth.in/api/admin/login", {
+        email,
+        password
+      }, {
+        headers: { "Content-Type": "application/json" }
+      });
 
-    const isMatch = await bcrypt.compare(password, admin.password);
-    if (!isMatch)
-      return res.status(400).json({ message: "Incorrect password" });
+      console.log("✅ External Login Successful");
+      const data = response.data;
 
-    // Generate Token
-    const token = jwt.sign(
-      { userId: admin._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    res.json({
-      message: "Admin Login Successful",
-      token, // Send token
-      admin: {
-        name: admin.name,
-        email: admin.email,
+      // Ensure ID is present for frontend
+      if (data.admin && !data.admin.id) {
+        data.admin.id = data.admin._id || "external-admin-id";
       }
-    });
+
+      res.json(data);
+
+    } catch (apiError) {
+      console.warn("External Login Failed:", apiError.response?.data || apiError.message);
+
+      const status = apiError.response?.status || 500;
+      const errorData = apiError.response?.data || { message: "External Login Failed" };
+
+      return res.status(status).json(errorData);
+    }
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ Proxy Error:", err);
+    res.status(500).json({ message: "Internal Proxy Error", error: err.message });
   }
 });
 
@@ -64,6 +71,14 @@ router.get("/users", async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
+});
+
+const auth = require("../middleware/auth");
+router.get("/debug-token", auth, (req, res) => {
+  res.json({
+    resolvedUser: req.user,
+    token: req.header("Authorization")?.split(" ")[1]
+  });
 });
 
 module.exports = router;

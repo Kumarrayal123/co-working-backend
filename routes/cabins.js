@@ -26,17 +26,34 @@ const upload = multer({ storage });
 // ======================
 router.post("/", auth, upload.array("images", 5), async (req, res) => {
   try {
-    console.log("Add Cabin Request Body:", req.body);
-    console.log("Add Cabin User:", req.user);
-    console.log("Add Cabin Files:", req.files);
+    console.log("=== ADD CABIN REQUEST STARTED ===");
+    console.log("Headers:", req.headers);
+    console.log("User from Token:", req.user);
+    console.log("Request Body:", req.body);
+    console.log("Files:", req.files);
+
+    if (!req.user || !req.user.id) {
+      console.error("❌ CRITICAL: User ID missing from request object.");
+      return res.status(401).json({ message: "User authentication failed. No ID found." });
+    }
 
     const { name, description, capacity, address, price } = req.body;
 
-    const amenities = req.body.amenities
-      ? JSON.parse(req.body.amenities)
-      : {};
+    let amenities = {};
+    try {
+      amenities = req.body.amenities ? JSON.parse(req.body.amenities) : {};
+    } catch (parseError) {
+      console.error("❌ Error parsing amenities:", parseError);
+      return res.status(400).json({ message: "Invalid amenities format" });
+    }
 
     const images = req.files?.map((file) => file.path) || [];
+
+    // Validate required fields explicitly
+    if (!name || !capacity || !price || !address) {
+      console.error("❌ Missing required fields:", { name, capacity, price, address });
+      return res.status(400).json({ message: "Missing required fields" });
+    }
 
     const newCabin = new Cabin({
       owner: req.user.id,
@@ -49,14 +66,16 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       images,
     });
 
+    console.log("Saving new cabin to database...");
     await newCabin.save();
+    console.log("✅ Cabin saved successfully!");
 
     res.status(201).json({
       message: "Cabin added successfully",
       cabin: newCabin,
     });
   } catch (err) {
-    console.log("ADD CABIN ERROR:", err); // Explicitly log the error
+    console.error("❌ ADD CABIN ERROR:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
