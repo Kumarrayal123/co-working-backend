@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 [2026-02-11T11:23:32.334Z] DECODED: {
   "id": "694e55480e3e176ff1829a32",
   "role": "partner",
@@ -164,5 +165,149 @@
   "role": "partner",
   "iat": 1767252666,
   "exp": 1769844666
+=======
+[2026-02-11T12:21:50.621Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:21:50.695Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:21:51.146Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:21:51.364Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:01.426Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:01.497Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:05.334Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:05.372Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:07.960Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:08.011Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:08.065Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+}
+
+[2026-02-11T12:22:08.082Z] DECODED: {
+  "_id": "68ebe9ee8f06d33ee022d665",
+  "name": "saidulureddy",
+  "email": "saidulureddy@gmail.com",
+  "mobile": "901442455",
+  "password": "reddy123",
+  "role": "admin",
+  "createdAt": "2025-10-12T17:48:30.796Z",
+  "updatedAt": "2025-10-12T17:48:30.796Z",
+  "__v": 0
+>>>>>>> 24b873f47457c0642e2201178fbf2a58e61b0b81
 }
 
