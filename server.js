@@ -7,6 +7,7 @@ const authRoutes = require("./routes/auth");
 const cabinRoutes = require("./routes/cabins");
 const adminRoutes = require("./routes/admin");
 const bookingRoutes = require("./routes/bookings");
+const Cabin = require("./model/cabin");
 
 const app = express();
 
@@ -27,7 +28,22 @@ app.use("/api/bookings", bookingRoutes);
 
 // DB Connection
 mongoose.connect(process.env.MONGO_URL)
-  .then(() => console.log("MongoDB Connected Successfully"))
+  .then(async () => {
+    console.log("MongoDB Connected Successfully");
+    try {
+      const SAIDULU_ID = "68ebe9ee8f06d33ee022d665";
+      const OTHER_ID = "694e55480e3e176ff1829a32";
+      const SAIDULU_CABIN_IDS = ["69773957ebac327b9422bbd4", "6953a32f98d91a36a2d497ba"];
+
+      // Rectify ownership: 2 to Saidulu, others to Placeholder
+      await Cabin.updateMany({ _id: { $in: SAIDULU_CABIN_IDS } }, { $set: { owner: SAIDULU_ID } });
+      await Cabin.updateMany({ _id: { $nin: SAIDULU_CABIN_IDS } }, { $set: { owner: OTHER_ID } });
+      
+      console.log("✅ Cabin ownership rectified: 2 assigned to Saidulu, 6 to System.");
+    } catch (e) {
+      console.error("Migration/Rectification failed:", e);
+    }
+  })
   .catch((err) => console.error("CRITICAL: MongoDB Connection Failed:", err));
 
 // Start Server
