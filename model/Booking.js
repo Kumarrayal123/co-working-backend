@@ -51,6 +51,9 @@ const bookingSchema = new mongoose.Schema({
   startTime: String,
   endDate: String,
   endTime: String,
+  
+  name: String,
+  mobile: String,
 
   // ⭐ ADD THESE
   totalHours: {

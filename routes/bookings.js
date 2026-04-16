@@ -49,6 +49,8 @@ router.post("/createbooking/:userId", async (req, res) => {
     const { userId } = req.params;
     const {
       cabinId,
+      name,
+      mobile,
       startDate,
       startTime,
       endDate,
@@ -83,6 +85,8 @@ router.post("/createbooking/:userId", async (req, res) => {
     const booking = new Booking({
       cabinId,
       userId,
+      name,
+      mobile,
       startDate,
       startTime,
       endDate,
