@@ -54,15 +54,32 @@ const bookingSchema = new mongoose.Schema({
   
   name: String,
   mobile: String,
+  email: String,
 
   // ⭐ ADD THESE
   totalHours: {
     type: Number,
-    required: true,
+    default: 0,
   },
   totalPrice: {
     type: Number,
-    required: true,
+    default: 0,
+  },
+  bookingType: {
+    type: String,
+    enum: ["booking", "visit"],
+    default: "booking",
+  },
+  bookingBasis: {
+    type: String,
+    enum: ["hourly", "plan"],
+    default: "hourly",
+  },
+  selectedPlan: {
+    label: String,
+    hours: Number,
+    cost: Number,
+    validity: Number,
   },
 
   createdAt: {

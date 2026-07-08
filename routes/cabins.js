@@ -24,18 +24,9 @@ const upload = multer({ storage });
 // ======================
 // CREATE CABIN
 // ======================
-router.post("/", auth, upload.array("images", 5), async (req, res) => {
+router.post("/", upload.array("images", 5), async (req, res) => {
   try {
     console.log("=== ADD CABIN REQUEST STARTED ===");
-    console.log("Headers:", req.headers);
-    console.log("User from Token:", req.user);
-    console.log("Request Body:", req.body);
-    console.log("Files:", req.files);
-
-    if (!req.user || !req.user.id) {
-      console.error("❌ CRITICAL: User ID missing from request object.");
-      return res.status(401).json({ message: "User authentication failed. No ID found." });
-    }
 
     const { name, description, capacity, address, price } = req.body;
 
@@ -43,30 +34,42 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
     try {
       amenities = req.body.amenities ? JSON.parse(req.body.amenities) : {};
     } catch (parseError) {
-      console.error("❌ Error parsing amenities:", parseError);
       return res.status(400).json({ message: "Invalid amenities format" });
+    }
+
+    // Parse pricing plans
+    let pricingPlans = [];
+    try {
+      pricingPlans = req.body.pricingPlans ? JSON.parse(req.body.pricingPlans) : [];
+    } catch (e) {
+      return res.status(400).json({ message: "Invalid pricingPlans format" });
     }
 
     const images = req.files?.map((file) => file.path) || [];
 
-    // Validate required fields explicitly
-    if (!name || !capacity || !price || !address) {
-      console.error("❌ Missing required fields:", { name, capacity, price, address });
+    if (!name || !capacity || !address) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
+    const derivedPrice = price !== undefined
+      ? Number(price) || 0
+      : (pricingPlans.length > 0 ? Math.min(...pricingPlans.map((p) => Number(p.cost) || 0)) : 0);
+
+    // Use admin ID if no auth, otherwise use user ID from token
+    const ownerId = req.user?.id || "68ebe9ee8f06d33ee022d665";
+
     const newCabin = new Cabin({
-      owner: req.user.id,
+      owner: ownerId,
       name,
       description,
       capacity,
       address,
-      price,
+      price: derivedPrice,
+      pricingPlans,
       amenities,
       images,
     });
 
-    console.log("Saving new cabin to database...");
     await newCabin.save();
     console.log("✅ Cabin saved successfully!");
 
@@ -148,10 +151,25 @@ router.put("/:id", auth, upload.array("images", 5), async (req, res) => {
     cabin.description = description || cabin.description;
     cabin.capacity = capacity || cabin.capacity;
     cabin.address = address || cabin.address;
-    cabin.price = price || cabin.price;
 
     if (req.body.amenities) {
       cabin.amenities = JSON.parse(req.body.amenities);
+    }
+
+    // Update pricing plans if provided
+    if (req.body.pricingPlans) {
+      try {
+        const plans = JSON.parse(req.body.pricingPlans);
+        cabin.pricingPlans = plans;
+      } catch (e) {
+        return res.status(400).json({ message: "Invalid pricingPlans format" });
+      }
+    }
+
+    if (price !== undefined) {
+      cabin.price = Number(price) || 0;
+    } else if (cabin.pricingPlans && cabin.pricingPlans.length > 0 && !cabin.price) {
+      cabin.price = Math.min(...cabin.pricingPlans.map((p) => Number(p.cost) || 0));
     }
 
     if (req.files && req.files.length > 0) {
@@ -171,7 +189,7 @@ router.put("/:id", auth, upload.array("images", 5), async (req, res) => {
 // ======================
 // DELETE CABIN
 // ======================
-router.delete("/:id", auth, async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
     const cabin = await Cabin.findById(req.params.id);
 
@@ -179,11 +197,7 @@ router.delete("/:id", auth, async (req, res) => {
       return res.status(404).json({ message: "Cabin not found" });
     }
 
-    // ✅ Owner check
-    if (cabin.owner.toString() !== req.user.id) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
+    // Skip owner check for admin (no auth)
     await cabin.deleteOne();
 
     res.json({ message: "Cabin deleted successfully" });

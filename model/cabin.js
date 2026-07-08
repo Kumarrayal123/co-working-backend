@@ -1,5 +1,12 @@
 const mongoose = require("mongoose");
 
+const pricingPlanSchema = new mongoose.Schema({
+  label: { type: String },        // e.g. "Monthly", "Weekly"
+  hours: { type: Number },        // total hours included
+  cost: { type: Number },         // price in ₹
+  validity: { type: Number },     // validity in days
+}, { _id: true });
+
 const cabinSchema = new mongoose.Schema({
   owner: {
     type: mongoose.Schema.Types.ObjectId,
@@ -9,7 +16,8 @@ const cabinSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: { type: String },
   capacity: { type: String, required: true },
-  price: { type: Number, required: true },
+  price: { type: Number, default: 0 },          // kept for backward compat
+  pricingPlans: { type: [pricingPlanSchema], default: [] },
   images: { type: [String] },
   address: { type: String, required: true },
   amenities: {

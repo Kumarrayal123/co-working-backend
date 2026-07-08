@@ -19,6 +19,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, },
   mobile: { type: String, },
   address: { type: String, },
+  organizationName: { type: String, },
   role: { type: String, enum: ["user", "doctor"], default: "user" },
 
   // Doctor Verification Documents

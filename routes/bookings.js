@@ -51,48 +51,83 @@ router.post("/createbooking/:userId", async (req, res) => {
       cabinId,
       name,
       mobile,
+      email,
       startDate,
       startTime,
       endDate,
-      endTime
+      endTime,
+      bookingBasis = "hourly",
+      selectedPlan
     } = req.body;
 
-    const newStart = new Date(`${startDate}T${startTime}`);
-    const newEnd = new Date(`${endDate}T${endTime}`);
-
-    if (newEnd <= newStart) {
-      return res.status(400).json({ error: "Invalid date/time" });
+    const cabin = await Cabin.findById(cabinId);
+    if (!cabin) {
+      return res.status(404).json({ error: "Cabin not found" });
     }
 
-    // Overlap check
-    const existingBookings = await Booking.find({ cabinId });
+    let calculatedTotalHours = 0;
+    let calculatedTotalPrice = 0;
+    let computedEndDate = endDate;
+    let computedEndTime = endTime;
 
-    for (let booking of existingBookings) {
-      const bookedStart = new Date(`${booking.startDate}T${booking.startTime}`);
-      const bookedEnd = new Date(`${booking.endDate}T${booking.endTime}`);
-
-      if (newStart < bookedEnd && newEnd > bookedStart) {
-        return res.status(400).json({
-          error: "Cabin already booked for this time slot"
-        });
+    if (bookingBasis === "plan") {
+      if (!selectedPlan || !selectedPlan.cost) {
+        return res.status(400).json({ error: "Selected plan details are required" });
       }
-    }
+      calculatedTotalHours = Number(selectedPlan.hours) || 0;
+      calculatedTotalPrice = Number(selectedPlan.cost) || 0;
 
-    const diffMs = newEnd - newStart;
-    const totalHours = Math.ceil(diffMs / (1000 * 60 * 60));
-    const totalPrice = totalHours * 5000;
+      // Compute end date based on plan validity (days)
+      const startDateTime = new Date(`${startDate}T${startTime}`);
+      const validityDays = Number(selectedPlan.validity) || 30;
+      const endDateTime = new Date(startDateTime.getTime() + validityDays * 24 * 60 * 60 * 1000);
+      
+      computedEndDate = endDateTime.toISOString().split("T")[0];
+      computedEndTime = startTime;
+    } else {
+      const newStart = new Date(`${startDate}T${startTime}`);
+      const newEnd = new Date(`${endDate}T${endTime}`);
+
+      if (newEnd <= newStart) {
+        return res.status(400).json({ error: "Invalid date/time" });
+      }
+
+      // Overlap check (only checks against other hourly/legacy bookings)
+      const existingBookings = await Booking.find({ 
+        cabinId,
+        bookingBasis: { $ne: "plan" }
+      });
+
+      for (let booking of existingBookings) {
+        const bookedStart = new Date(`${booking.startDate}T${booking.startTime}`);
+        const bookedEnd = new Date(`${booking.endDate}T${booking.endTime}`);
+
+        if (newStart < bookedEnd && newEnd > bookedStart) {
+          return res.status(400).json({
+            error: "Cabin already booked for this time slot"
+          });
+        }
+      }
+
+      const diffMs = newEnd - newStart;
+      calculatedTotalHours = Math.ceil(diffMs / (1000 * 60 * 60));
+      calculatedTotalPrice = calculatedTotalHours * (cabin.price || 0);
+    }
 
     const booking = new Booking({
       cabinId,
       userId,
       name,
       mobile,
+      email,
       startDate,
       startTime,
-      endDate,
-      endTime,
-      totalHours,
-      totalPrice
+      endDate: computedEndDate,
+      endTime: computedEndTime,
+      totalHours: calculatedTotalHours,
+      totalPrice: calculatedTotalPrice,
+      bookingBasis,
+      selectedPlan
     });
 
     await booking.save();
@@ -103,10 +138,56 @@ router.post("/createbooking/:userId", async (req, res) => {
     });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ error: "Booking failed" });
+    console.error("Booking creation error:", err);
+    res.status(500).json({ error: "Booking failed", details: err.message });
   }
 });
+
+// ======================
+// ⭐ 5. CREATE A SITE VISIT
+// ======================
+router.post("/createvisit/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const {
+      cabinId,
+      name,
+      mobile,
+      email,
+      startDate,
+      startTime
+    } = req.body;
+
+    if (!cabinId || !name || !mobile || !startDate || !startTime) {
+      return res.status(400).json({ error: "Missing required fields for site visit" });
+    }
+
+    const booking = new Booking({
+      cabinId,
+      userId,
+      name,
+      mobile,
+      email,
+      startDate,
+      startTime,
+      bookingType: "visit",
+      totalHours: 0,
+      totalPrice: 0
+    });
+
+    await booking.save();
+
+    res.status(201).json({
+      message: "Site visit scheduled successfully",
+      booking
+    });
+
+  } catch (err) {
+    console.error("Error creating site visit:", err);
+    res.status(500).json({ error: "Site visit scheduling failed" });
+  }
+});
+
 
 // ======================
 // 3. GET ALL BOOKINGS (ADMIN)
@@ -114,7 +195,7 @@ router.post("/createbooking/:userId", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const bookings = await Booking.find()
-      .populate("cabinId", "name address capacity price images")
+      .populate("cabinId", "name address capacity price images owner")
       .populate("userId", "name mobile email")
       .sort({ createdAt: -1 });
 
@@ -122,6 +203,28 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+// ======================
+// ⭐ GET BOOKED SLOTS FOR A CABIN (PUBLIC - for showing unavailable times)
+// ======================
+router.get("/cabin/:cabinId", async (req, res) => {
+  try {
+    const { cabinId } = req.params;
+
+    // Fetch all bookings that are NOT site visits (includes ones where bookingType is unset)
+    const bookings = await Booking.find({
+      cabinId,
+      bookingType: { $ne: "visit" }
+    })
+      .select("startDate startTime endDate endTime name email")
+      .sort({ startDate: 1, startTime: 1 });
+
+    res.status(200).json({ bookedSlots: bookings });
+  } catch (err) {
+    console.error("Error fetching cabin booked slots:", err);
+    res.status(500).json({ error: "Failed to fetch booked slots" });
   }
 });
 
