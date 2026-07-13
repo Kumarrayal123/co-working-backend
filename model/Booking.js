@@ -63,6 +63,10 @@ const bookingSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+
+   subtotal: { type: Number, default: 0 }, // ✅ New field
+  gstAmount: { type: Number, default: 0 }, // ✅ New field
+  gstRate: { type: Number, default: 0.18 }, // ✅ New field
   bookingType: {
     type: String,
     enum: ["booking", "visit"],
@@ -89,13 +93,52 @@ const bookingSchema = new mongoose.Schema({
 
   paymentMethod: {
     type: String,
-    enum: ['online', 'counter'],
+    enum: ['online', 'counter', 'cash'],
     default: 'online'
   },
 
+  // models/Booking.js - Add amountPaid field
+amountPaid: {
+  type: Number,
+  default: 0
+},
+
+  isPaidToOwner: {
+    type: Boolean,
+    default: false
+  },
+
+
+   visitingTimings: {
+    type: [{
+      date: { type: String, },
+      checkIn: { type: String, },
+      checkOut: { type: String, },
+      addedAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now }
+    }],
+    default: []
+  },
+
+
+   termsAccepted: {
+    type: Boolean,
+    default: false
+  },
+
+   // ─── REPLACEMENT FIELDS (Sirf 4) ───
+  isReplaced: { type: Boolean, default: false },
+  replacedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'Cabin', default: null },
+  replacedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Cabin', default: null },
+  priceDifference: { type: Number, default: 0 },
+
+  // ─── CANCELLATION FIELDS (Sirf 2) ───
+  cancelledAt: { type: Date, default: null },
+  refundAmount: { type: Number, default: 0 },
+
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'failed', 'refunded'],
+    enum: ['pending', 'paid', 'failed', 'refunded', 'cash'],
     default: 'paid'
   },
   paymentId: {

@@ -39,6 +39,11 @@ const cabinOrderSchema = new mongoose.Schema({
     unique: true,
     sparse: true
   },
+
+   baseAmount: { type: Number, required: true },      // ✅ Base amount without GST
+  gstAmount: { type: Number, default: 0 },           // ✅ GST amount
+  amount: { type: Number, required: true },          // ✅ Total with GST
+  gstRate: { type: Number, default: 0.18 },          // ✅ GST rate
   
   startDate: {
     type: Date,

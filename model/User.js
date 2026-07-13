@@ -29,6 +29,10 @@ const userSchema = new mongoose.Schema({
   pmcRegistration: { type: String, },    // Permanent Medical Registration
   nmrId: { type: String, },              // National Medical Register ID
 
+
+  gstNumber: { type: String, default: '' },
+  dmhoNumber: { type: String, default: '' },
+
   // Document Verification Status
   adharCardStatus: { type: String, default: "pending" },
   panCardStatus: { type: String, default: "pending" },

@@ -66,13 +66,105 @@ router.put("/reject/:id", async (req, res) => {
 
 
 
-// FETCH ALL USERS (ADMIN ACCESS)
+// ======================
+// FETCH ALL USERS WITH CABIN DETAILS (ADMIN ACCESS)
+// ======================
 router.get("/users", async (req, res) => {
   try {
+    // Get all users
     const users = await User.find();
-    res.json(users);
+    
+    // For each user, get their cabin details
+    const usersWithCabins = await Promise.all(
+      users.map(async (user) => {
+        // Get all cabins owned by this user
+        const cabins = await Cabin.find({ owner: user._id })
+          .select('name address price capacity images cabinType isActive createdAt pricingPlans');
+        
+        // Get active cabin orders for this user
+        const orders = await CabinOrder.find({ 
+          owner: user._id,
+          status: 'active'
+        }).select('amount status expiryDate startDate');
+        
+        // Calculate stats
+        const totalCabins = cabins.length;
+        const activeCabins = cabins.filter(c => c.isActive === true).length;
+        const inactiveCabins = cabins.filter(c => c.isActive !== true).length;
+        const totalEarnings = orders.reduce((sum, order) => sum + order.amount, 0);
+        const activeOrders = orders.length;
+        
+        return {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          mobile: user.mobile,
+          address: user.address,
+          organizationName: user.organizationName || '',
+          gstNumber: user.gstNumber || '',
+          dmhoNumber: user.dmhoNumber || '',
+          role: user.role,
+          status: user.status,
+          createdAt: user.createdAt,
+          // Cabin Stats
+          cabinStats: {
+            total: totalCabins,
+            active: activeCabins,
+            inactive: inactiveCabins,
+            totalEarnings: totalEarnings,
+            activeOrders: activeOrders
+          },
+          // Cabin Details
+          cabins: cabins.map(cabin => ({
+            _id: cabin._id,
+            name: cabin.name,
+            address: cabin.address,
+            price: cabin.price,
+            capacity: cabin.capacity,
+            images: cabin.images || [],
+            cabinType: cabin.cabinType || 'normal',
+            isActive: cabin.isActive,
+            createdAt: cabin.createdAt,
+            pricingPlans: cabin.pricingPlans || [],
+            // Get latest order for this cabin
+            latestOrder: orders.find(o => o.cabin?.toString() === cabin._id.toString()) || null
+          })),
+          // Orders
+          orders: orders.map(order => ({
+            _id: order._id,
+            amount: order.amount,
+            status: order.status,
+            expiryDate: order.expiryDate,
+            startDate: order.startDate
+          }))
+        };
+      })
+    );
+
+    // Calculate overall stats
+    const overallStats = {
+      totalUsers: usersWithCabins.length,
+      totalCabins: usersWithCabins.reduce((sum, u) => sum + u.cabinStats.total, 0),
+      totalActiveCabins: usersWithCabins.reduce((sum, u) => sum + u.cabinStats.active, 0),
+      totalInactiveCabins: usersWithCabins.reduce((sum, u) => sum + u.cabinStats.inactive, 0),
+      totalEarnings: usersWithCabins.reduce((sum, u) => sum + u.cabinStats.totalEarnings, 0),
+      usersWithCabins: usersWithCabins.filter(u => u.cabinStats.total > 0).length,
+      usersWithoutCabins: usersWithCabins.filter(u => u.cabinStats.total === 0).length
+    };
+
+    res.json({
+      success: true,
+      users: usersWithCabins,
+      stats: overallStats
+    });
+
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    console.error('Error fetching users with cabins:', err);
+    res.status(500).json({ 
+      success: false,
+      message: "Server error",
+      error: err.message 
+    });
   }
 });
 

@@ -20,14 +20,31 @@ const cabinSchema = new mongoose.Schema({
   pricingPlans: { type: [pricingPlanSchema], default: [] },
   images: { type: [String] },
   address: { type: String, required: true },
+ // ✅ Complete Amenities with all fields
   amenities: {
+    // Normal Amenities (4)
     wifi: { type: Boolean, default: false },
     parking: { type: Boolean, default: false },
     lockers: { type: Boolean, default: false },
-    privateWashroom: { type: Boolean, default: false },
-    secureAccess: { type: Boolean, default: false },
     comfortSeating: { type: Boolean, default: false },
+    
+    // Exclusive Amenities (Additional 8)
+    privateWashroom: { type: Boolean, default: false },
+    secureAccess: { type: Boolean, default: false },    
+    coffee: { type: Boolean, default: false },
+    gym: { type: Boolean, default: false },
+    ac: { type: Boolean, default: false },
+    tv: { type: Boolean, default: false },
+    printer: { type: Boolean, default: false },
+    phone: { type: Boolean, default: false },
   },
+    cabinType: { type: String, enum: ['normal', 'exclusive'], default: 'normal' }, // ✅ New field
+      // ✅ Status fields
+  isActive: { 
+    type: Boolean, 
+    default: true           // ✅ Active by default
+  },
+
   createdAt: { type: Date, default: Date.now },
 });
 

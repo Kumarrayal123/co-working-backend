@@ -12,11 +12,13 @@ console.log("Bookings route file loaded successfully");
 
 
 
-// Initialize Razorpay
+// ✅ Razorpay initialized with keys
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_BxtRNvflG06PTV',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || 'RecEtdcenmR7Lm4AIEwo4KFr',
+  key_id: 'rzp_test_BxtRNvflG06PTV',
+  key_secret: 'RecEtdcenmR7Lm4AIEwo4KFr',
 });
+
+
 
 
 // ======================
@@ -53,7 +55,9 @@ router.get("/owner-bookings", auth, async (req, res) => {
   }
 });
 
-// routes/bookings.js - Create Booking (Updated)
+// ======================
+// CREATE BOOKING
+// ======================
 router.post("/createbooking/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
@@ -68,8 +72,19 @@ router.post("/createbooking/:userId", async (req, res) => {
       endTime,
       bookingBasis = "hourly",
       selectedPlan,
-      paymentMethod = "online" // ✅ Add this
+      paymentMethod = "online",
+      subtotal,
+      gstAmount,
+      totalAmount,
+      termsAccepted  // ✅ ADDED
     } = req.body;
+
+    // ✅ VALIDATE TERMS ACCEPTED
+    if (!termsAccepted) {
+      return res.status(400).json({ 
+        error: "Terms & Conditions must be accepted to proceed with booking" 
+      });
+    }
 
     const cabin = await Cabin.findById(cabinId);
     if (!cabin) {
@@ -79,16 +94,22 @@ router.post("/createbooking/:userId", async (req, res) => {
     const ownerId = cabin.owner;
 
     let calculatedTotalHours = 0;
+    let calculatedSubtotal = 0;
+    let calculatedGstAmount = 0;
     let calculatedTotalPrice = 0;
     let computedEndDate = endDate;
     let computedEndTime = endTime;
+
+    const GST_RATE = 0.18;
 
     if (bookingBasis === "plan") {
       if (!selectedPlan || !selectedPlan.cost) {
         return res.status(400).json({ error: "Selected plan details are required" });
       }
       calculatedTotalHours = Number(selectedPlan.hours) || 0;
-      calculatedTotalPrice = Number(selectedPlan.cost) || 0;
+      calculatedSubtotal = Number(selectedPlan.cost) || 0;
+      calculatedGstAmount = calculatedSubtotal * GST_RATE;
+      calculatedTotalPrice = calculatedSubtotal + calculatedGstAmount;
 
       const startDateTime = new Date(`${startDate}T${startTime}`);
       const validityDays = Number(selectedPlan.validity) || 30;
@@ -123,28 +144,59 @@ router.post("/createbooking/:userId", async (req, res) => {
 
       const diffMs = newEnd - newStart;
       calculatedTotalHours = Math.ceil(diffMs / (1000 * 60 * 60));
-      calculatedTotalPrice = calculatedTotalHours * (cabin.price || 0);
+      calculatedSubtotal = calculatedTotalHours * (cabin.price || 0);
+      calculatedGstAmount = calculatedSubtotal * GST_RATE;
+      calculatedTotalPrice = calculatedSubtotal + calculatedGstAmount;
     }
 
-    // ======================
-    // CREATE RAZORPAY ORDER (Only for online payment)
-    // ======================
+    let finalTotalPrice = 0;
+    let finalSubtotal = 0;
+    let finalGstAmount = 0;
+
+    if (totalAmount && totalAmount > 0) {
+      finalTotalPrice = Number(totalAmount);
+      finalSubtotal = Number(subtotal) || calculatedSubtotal;
+      finalGstAmount = Number(gstAmount) || calculatedGstAmount;
+    } else {
+      finalSubtotal = calculatedSubtotal;
+      finalGstAmount = calculatedGstAmount;
+      finalTotalPrice = calculatedTotalPrice;
+    }
+
+    console.log("===== BOOKING DEBUG =====");
+    console.log("Terms Accepted:", termsAccepted);
+    console.log("FINAL Total Price:", finalTotalPrice);
+    console.log("=========================");
+
     let razorpayOrder = null;
     if (paymentMethod === 'online') {
+      const amountInPaise = Math.round(parseFloat(finalTotalPrice) * 100);
+      
+      if (amountInPaise <= 0) {
+        return res.status(400).json({ error: "Invalid amount for payment" });
+      }
+
       razorpayOrder = await razorpay.orders.create({
-        amount: calculatedTotalPrice * 100,
+        amount: amountInPaise,
         currency: 'INR',
         receipt: `booking_${Date.now()}`,
         notes: {
           cabinId: cabinId,
-          userId: userId
+          userId: userId,
+          subtotal: String(finalSubtotal),
+          gstAmount: String(finalGstAmount),
+          totalAmount: String(finalTotalPrice),
+          termsAccepted: String(termsAccepted)  // ✅ ADDED
         }
+      });
+
+      console.log("Razorpay Order Created:", {
+        id: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        amountInRupees: razorpayOrder.amount / 100
       });
     }
 
-    // ======================
-    // CREATE BOOKING
-    // ======================
     const bookingData = {
       cabinId,
       userId,
@@ -157,19 +209,23 @@ router.post("/createbooking/:userId", async (req, res) => {
       endDate: computedEndDate,
       endTime: computedEndTime,
       totalHours: calculatedTotalHours,
-      totalPrice: calculatedTotalPrice,
+      subtotal: finalSubtotal,
+      gstAmount: finalGstAmount,
+      totalPrice: finalTotalPrice,
+      gstRate: GST_RATE,
       bookingBasis,
       selectedPlan,
-      paymentMethod: paymentMethod, // ✅ Store payment method
+      paymentMethod: paymentMethod,
       remainingHours: calculatedTotalHours,
-      hoursUsed: 0
+      hoursUsed: 0,
+      isPaidToOwner: false,
+      termsAccepted: termsAccepted  // ✅ ADDED - SAVED IN DATABASE
     };
 
-    // If counter payment, set status to confirmed directly
-    if (paymentMethod === 'counter') {
+    if (paymentMethod === 'cash') {
       bookingData.status = 'confirmed';
       bookingData.paymentStatus = 'pending';
-      bookingData.transactionId = `COUNTER_${Date.now()}`;
+      bookingData.transactionId = `CASH_${Date.now()}`;
     } else {
       bookingData.status = 'pending';
       bookingData.paymentStatus = 'pending';
@@ -180,43 +236,49 @@ router.post("/createbooking/:userId", async (req, res) => {
     const booking = new Booking(bookingData);
     await booking.save();
 
-    // ======================
-    // RESPONSE
-    // ======================
-    if (paymentMethod === 'counter') {
-      // Counter booking response - no Razorpay
+    if (paymentMethod === 'cash') {
       res.status(201).json({
         success: true,
-        message: "Booking confirmed! Please pay at the counter.",
+        message: `Booking confirmed! Total: ₹${finalTotalPrice.toFixed(2)} (incl. GST ₹${finalGstAmount.toFixed(2)})`,
         booking: {
           id: booking._id,
           cabinName: cabin.name,
+          subtotal: booking.subtotal,
+          gstAmount: booking.gstAmount,
           totalPrice: booking.totalPrice,
           totalHours: booking.totalHours,
           remainingHours: booking.remainingHours,
           status: booking.status,
-          paymentMethod: booking.paymentMethod
+          paymentMethod: booking.paymentMethod,
+          paymentStatus: booking.paymentStatus,
+          gstRate: booking.gstRate,
+          termsAccepted: booking.termsAccepted  // ✅ ADDED
         }
       });
     } else {
-      // Online booking response - with Razorpay
       res.status(201).json({
         success: true,
         message: "Booking created. Please complete payment.",
         booking: {
           id: booking._id,
           cabinName: cabin.name,
+          subtotal: booking.subtotal,
+          gstAmount: booking.gstAmount,
           totalPrice: booking.totalPrice,
           totalHours: booking.totalHours,
           remainingHours: booking.remainingHours,
           status: booking.status,
-          paymentMethod: booking.paymentMethod
+          paymentMethod: booking.paymentMethod,
+          paymentStatus: booking.paymentStatus,
+          gstRate: booking.gstRate,
+          termsAccepted: booking.termsAccepted  // ✅ ADDED
         },
         razorpay: {
           orderId: razorpayOrder.id,
           amount: razorpayOrder.amount,
+          amountInRupees: (razorpayOrder.amount / 100).toFixed(2),
           currency: razorpayOrder.currency,
-          key: process.env.RAZORPAY_KEY_ID || 'rzp_test_BxtRNvflG06PTV'
+          key: 'rzp_test_BxtRNvflG06PTV'
         }
       });
     }
@@ -226,9 +288,330 @@ router.post("/createbooking/:userId", async (req, res) => {
     res.status(500).json({ error: "Booking failed", details: err.message });
   }
 });
+// ======================
+// VERIFY PAYMENT - WITH WALLET UPDATE
+// ======================
+router.post("/verify-payment", async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      bookingId
+    } = req.body;
+
+    console.log("===== VERIFY PAYMENT REQUEST =====");
+    console.log("Order ID:", razorpay_order_id);
+    console.log("Payment ID:", razorpay_payment_id);
+    console.log("Booking ID:", bookingId);
+    console.log("==================================");
+
+    if (!bookingId) {
+      console.error("Booking ID is missing!");
+      return res.status(400).json({
+        success: false,
+        error: "Booking ID is required"
+      });
+    }
+
+    // ✅ VERIFY SIGNATURE
+    const secret = 'RecEtdcenmR7Lm4AIEwo4KFr';
+    const hmac = crypto.createHmac('sha256', secret);
+    const data = `${razorpay_order_id}|${razorpay_payment_id}`;
+    hmac.update(data);
+    const generatedSignature = hmac.digest('hex');
+
+    console.log("Generated Signature:", generatedSignature);
+    console.log("Received Signature:", razorpay_signature);
+    console.log("Match?", generatedSignature === razorpay_signature);
+
+    if (generatedSignature !== razorpay_signature) {
+      console.error("❌ Signature mismatch!");
+      return res.status(400).json({
+        success: false,
+        error: "Invalid payment signature"
+      });
+    }
+
+    console.log("✅ Signature verified!");
+
+    // ✅ Find and update booking
+    const booking = await Booking.findById(bookingId).populate('cabinId', 'name owner');
+    if (!booking) {
+      console.error("Booking not found:", bookingId);
+      return res.status(404).json({
+        success: false,
+        error: "Booking not found"
+      });
+    }
+
+    // ✅ Update booking
+    booking.paymentStatus = 'paid';
+    booking.status = 'confirmed';
+    booking.razorpayPaymentId = razorpay_payment_id;
+    booking.razorpayOrderId = razorpay_order_id;
+    booking.transactionId = razorpay_payment_id;
+    booking.updatedAt = new Date();
+
+    if (booking.bookingBasis === 'plan' && booking.selectedPlan) {
+      booking.remainingHours = Number(booking.selectedPlan.hours) || booking.totalHours;
+    } else {
+      booking.remainingHours = booking.totalHours;
+    }
+
+    await booking.save();
+
+    console.log("✅ Booking updated successfully:", {
+      id: booking._id,
+      status: booking.status,
+      paymentStatus: booking.paymentStatus
+    });
+
+    // ======================
+    // ✅ ADD AMOUNT TO OWNER WALLET
+    // ======================
+    if (!booking.isPaidToOwner) {
+      try {
+        const ownerId = booking.ownerId || booking.cabinId?.owner;
+        const amountToAdd = booking.totalPrice || 0;
+
+        console.log("💰 Adding to owner wallet:", {
+          ownerId: ownerId,
+          amount: amountToAdd,
+          bookingId: booking._id
+        });
+
+        if (ownerId && amountToAdd > 0) {
+          let wallet = await Wallet.findOne({ ownerId: ownerId });
+          if (!wallet) {
+            wallet = new Wallet({
+              ownerId: ownerId,
+              balance: 0,
+              totalEarned: 0,
+              transactions: [],
+              withdrawals: []
+            });
+            console.log("✅ New wallet created for owner:", ownerId);
+          }
+
+          wallet.transactions.push({
+            bookingId: booking._id,
+            cabinId: booking.cabinId?._id,
+            cabinName: booking.cabinId?.name || 'Unknown Cabin',
+            amount: amountToAdd,
+            type: 'credit',
+            description: `Booking payment for ${booking.cabinId?.name || 'Cabin'}`,
+            customerName: booking.name || 'Customer',
+            customerMobile: booking.mobile || 'N/A',
+            startDate: booking.startDate,
+            endDate: booking.endDate
+          });
+
+          wallet.balance = (wallet.balance || 0) + amountToAdd;
+          wallet.totalEarned = (wallet.totalEarned || 0) + amountToAdd;
+          wallet.updatedAt = new Date();
+
+          await wallet.save();
+          console.log("✅ Wallet updated successfully:", {
+            ownerId: ownerId,
+            newBalance: wallet.balance,
+            totalEarned: wallet.totalEarned
+          });
+
+          booking.isPaidToOwner = true;
+          await booking.save();
+
+          console.log("✅ Amount added to owner wallet successfully!");
+        } else {
+          console.warn("⚠️ Owner ID or amount missing:", { ownerId, amountToAdd });
+        }
+      } catch (walletError) {
+        console.error("❌ Wallet update error:", walletError);
+        // Don't fail the response
+      }
+    } else {
+      console.log("ℹ️ Amount already added to owner wallet");
+    }
+
+    res.json({
+      success: true,
+      message: "Payment verified and booking confirmed!",
+      booking: {
+        id: booking._id,
+        cabinId: booking.cabinId,
+        startDate: booking.startDate,
+        startTime: booking.startTime,
+        endDate: booking.endDate,
+        endTime: booking.endTime,
+        totalHours: booking.totalHours,
+        subtotal: booking.subtotal,
+        gstAmount: booking.gstAmount,
+        totalPrice: booking.totalPrice,
+        remainingHours: booking.remainingHours,
+        status: booking.status,
+        paymentStatus: booking.paymentStatus,
+        paymentMethod: booking.paymentMethod,
+        razorpayPaymentId: booking.razorpayPaymentId,
+        transactionId: booking.transactionId,
+        isPaidToOwner: booking.isPaidToOwner
+      }
+    });
+
+  } catch (err) {
+    console.error("Payment verification error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Payment verification failed",
+      details: err.message
+    });
+  }
+});
 
 
 
+
+// ======================
+// REPLACE BOOKING
+// ======================
+router.put("/replace-booking/:bookingId", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { newCabinId } = req.body;
+
+    if (!newCabinId) {
+      return res.status(400).json({ error: "New cabin ID is required" });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    if (booking.status !== 'confirmed' && booking.status !== 'active') {
+      return res.status(400).json({ error: "Only confirmed or active bookings can be replaced" });
+    }
+
+    const newCabin = await Cabin.findById(newCabinId);
+    if (!newCabin || !newCabin.isActive) {
+      return res.status(400).json({ error: "Selected cabin is not available" });
+    }
+
+    // Check availability
+    const start = new Date(`${booking.startDate}T${booking.startTime}`);
+    const end = new Date(`${booking.endDate}T${booking.endTime}`);
+
+    const conflicting = await Booking.find({
+      cabinId: newCabinId,
+      status: { $nin: ['cancelled', 'completed'] },
+      $or: [
+        { startDate: booking.startDate, startTime: { $lt: booking.endTime } },
+        { endDate: booking.endDate, endTime: { $gt: booking.startTime } }
+      ]
+    });
+
+    if (conflicting.length > 0) {
+      return res.status(400).json({ error: "New cabin is not available for this time slot" });
+    }
+
+    // Calculate difference
+    const oldTotal = booking.totalPrice || 0;
+    const newTotal = (newCabin.price * booking.totalHours) * 1.18;
+    const priceDiff = Math.round(newTotal - oldTotal);
+
+    // Update booking
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      bookingId,
+      {
+        cabinId: newCabinId,
+        subtotal: newCabin.price * booking.totalHours,
+        gstAmount: (newCabin.price * booking.totalHours) * 0.18,
+        totalPrice: newTotal,
+        isReplaced: true,
+        replacedFrom: booking.cabinId,
+        replacedTo: newCabinId,
+        priceDifference: priceDiff
+      },
+      { new: true }
+    ).populate('cabinId');
+
+    let message = "Booking replaced successfully!";
+    if (priceDiff > 0) message = `₹${priceDiff} extra to pay.`;
+    else if (priceDiff < 0) message = `₹${Math.abs(priceDiff)} will be refunded.`;
+
+    res.json({
+      success: true,
+      message: message,
+      booking: updatedBooking,
+      priceDifference: priceDiff
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to replace booking", details: err.message });
+  }
+});
+
+
+
+
+// ======================
+// CANCEL BOOKING
+// ======================
+router.put("/cancel-booking/:bookingId", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    if (booking.status === 'cancelled') {
+      return res.status(400).json({ error: "Booking already cancelled" });
+    }
+
+    if (booking.status === 'completed') {
+      return res.status(400).json({ error: "Cannot cancel completed booking" });
+    }
+
+    // Refund calculation
+    const now = new Date();
+    const startTime = new Date(`${booking.startDate}T${booking.startTime}`);
+    const hoursLeft = (startTime - now) / (1000 * 60 * 60);
+
+    let refundAmount = 0;
+    if (hoursLeft >= 24) refundAmount = booking.totalPrice;
+    else if (hoursLeft >= 1) refundAmount = booking.totalPrice * 0.5;
+    else refundAmount = 0;
+
+    // Update booking
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      bookingId,
+      {
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        refundAmount: refundAmount
+      },
+      { new: true }
+    );
+
+    let message = "Booking cancelled!";
+    if (refundAmount === booking.totalPrice) message = "Full refund will be processed.";
+    else if (refundAmount > 0) message = "50% refund will be processed.";
+    else message = "No refund applicable.";
+
+    res.json({
+      success: true,
+      message: message,
+      booking: updatedBooking,
+      refundAmount: refundAmount
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to cancel booking", details: err.message });
+  }
+});
 
 // ======================
 // ⭐ 5. CREATE A SITE VISIT
@@ -350,7 +733,7 @@ router.get("/cabin/:cabinId", async (req, res) => {
 });
 
 // ======================
-// 4. GET BOOKINGS BY USER ID (CUSTOMER) - UPDATED FOR AUTH TOKEN
+// 4. GET BOOKINGS BY USER ID (CUSTOMER) - UPDATED WITH OWNER POPULATION
 // ======================
 router.get("/user", auth, async (req, res) => {
   try {
@@ -361,7 +744,14 @@ router.get("/user", auth, async (req, res) => {
     console.log("-----------------------------------------");
 
     const bookings = await Booking.find({ userId })
-      .populate("cabinId", "name address capacity price images")
+      .populate({
+        path: "cabinId",
+        populate: {
+          path: "owner",
+          model: "User",
+          select: "name email mobile address organizationName gstNumber dmhoNumber"
+        }
+      })
       .sort({ createdAt: -1 });
 
     console.log(`✅ Bookings: Found ${bookings.length} bookings for user ${userId}`);
@@ -371,6 +761,7 @@ router.get("/user", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch bookings" });
   }
 });
+
 
 // Using the old route as fallback or for specific user fetch if needed (optional)
 router.get("/userbookings/:userId", async (req, res) => {
@@ -468,21 +859,21 @@ router.get('/my-wallet', auth, async (req, res) => {
 
 
 // ======================
-// GET ALL WALLETS (Admin)
+// GET ALL WALLETS (Admin) - WITH ORGANIZATION NAME
 // ======================
 router.get('/all-wallets', async (req, res) => {
   try {
     const wallets = await Wallet.find()
-      .populate('ownerId', 'name email mobile address')
+      .populate('ownerId', 'name email mobile address organizationName gstNumber')
       .sort({ createdAt: -1 });
 
     const stats = {
       totalWallets: wallets.length,
-      totalBalance: wallets.reduce((sum, w) => sum + w.balance, 0),
-      totalEarned: wallets.reduce((sum, w) => sum + w.totalEarned, 0),
-      totalTransactions: wallets.reduce((sum, w) => sum + w.transactions.length, 0),
-      activeWallets: wallets.filter(w => w.balance > 0).length,
-      zeroBalanceWallets: wallets.filter(w => w.balance === 0).length
+      totalBalance: wallets.reduce((sum, w) => sum + (w.balance || 0), 0),
+      totalEarned: wallets.reduce((sum, w) => sum + (w.totalEarned || 0), 0),
+      totalTransactions: wallets.reduce((sum, w) => sum + (w.transactions || []).length, 0),
+      activeWallets: wallets.filter(w => (w.balance || 0) > 0).length,
+      zeroBalanceWallets: wallets.filter(w => (w.balance || 0) === 0).length
     };
 
     res.json({
@@ -499,7 +890,6 @@ router.get('/all-wallets', async (req, res) => {
     });
   }
 });
-
 
 
 // Delete wallet by ID
@@ -654,13 +1044,13 @@ router.get('/withdrawals', auth, async (req, res) => {
 
 
 // ======================
-// GET ALL WITHDRAWALS (NO AUTH)
+// GET ALL WITHDRAWALS (WITH ORGANIZATION & GST)
 // ======================
 router.get('/all-withdrawals', async (req, res) => {
   try {
-    // Find all wallets and populate owner details
+    // Find all wallets and populate owner details with organization and GST
     const wallets = await Wallet.find({})
-      .populate('ownerId', 'name email mobile address')
+      .populate('ownerId', 'name email mobile address organizationName gstNumber')
       .sort({ createdAt: -1 });
 
     // Collect all withdrawals with wallet info
@@ -679,7 +1069,9 @@ router.get('/all-withdrawals', async (req, res) => {
           createdAt: withdrawal.createdAt,
           walletId: wallet._id,
           owner: wallet.ownerId,
-          walletBalance: wallet.balance
+          walletBalance: wallet.balance,
+          ownerOrganization: wallet.ownerId?.organizationName || 'N/A',
+          ownerGst: wallet.ownerId?.gstNumber || 'N/A'
         });
       });
     });
@@ -712,7 +1104,6 @@ router.get('/all-withdrawals', async (req, res) => {
     });
   }
 });
-
 
 // ======================
 // UPDATE WITHDRAWAL STATUS (NO AUTH)
@@ -1162,12 +1553,17 @@ router.get('/user-dashboard', async (req, res) => {
 
 
 // ======================
-// UPDATE PAYMENT STATUS (Admin/Owner)
+// UPDATE PAYMENT STATUS (Admin/Owner) - WITH WALLET UPDATE
 // ======================
 router.put('/bookingpayment-status/:bookingId', async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const { paymentStatus } = req.body;
+    const { paymentStatus, amountPaid } = req.body;
+
+    console.log("===== UPDATE PAYMENT STATUS =====");
+    console.log("Booking ID:", bookingId);
+    console.log("Payment Status:", paymentStatus);
+    console.log("Amount Paid:", amountPaid);
 
     // Validate payment status
     if (!['pending', 'paid', 'failed', 'refunded'].includes(paymentStatus)) {
@@ -1177,8 +1573,8 @@ router.put('/bookingpayment-status/:bookingId', async (req, res) => {
       });
     }
 
-    // Find booking
-    const booking = await Booking.findById(bookingId).populate('cabinId', 'name owner');
+    // ✅ Find booking with populated cabin
+    const booking = await Booking.findById(bookingId).populate('cabinId');
     if (!booking) {
       return res.status(404).json({
         success: false,
@@ -1186,11 +1582,19 @@ router.put('/bookingpayment-status/:bookingId', async (req, res) => {
       });
     }
 
-    // Check if booking is counter payment (only counter payments can be manually updated)
-    if (booking.paymentMethod !== 'counter') {
+    console.log("Booking found:", {
+      id: booking._id,
+      cabinId: booking.cabinId?._id,
+      cabinOwner: booking.cabinId?.owner,
+      paymentMethod: booking.paymentMethod,
+      paymentStatus: booking.paymentStatus
+    });
+
+    // Check if booking is cash/counter payment
+    if (booking.paymentMethod !== 'cash' && booking.paymentMethod !== 'counter') {
       return res.status(400).json({
         success: false,
-        error: 'Only counter payment bookings can be manually updated'
+        error: 'Only cash/counter payment bookings can be manually updated'
       });
     }
 
@@ -1206,47 +1610,91 @@ router.put('/bookingpayment-status/:bookingId', async (req, res) => {
     const oldStatus = booking.paymentStatus;
     booking.paymentStatus = paymentStatus;
 
-    // If marking as paid, add to owner's wallet
+    // ✅ If marking as paid, add to owner's wallet
     if (paymentStatus === 'paid' && oldStatus !== 'paid') {
-      // Add to owner's wallet
-      const cabin = await Cabin.findById(booking.cabinId);
-      if (cabin && booking.totalPrice > 0) {
-        let wallet = await Wallet.findOne({ ownerId: booking.ownerId });
-        if (!wallet) {
-          wallet = new Wallet({
-            ownerId: booking.ownerId,
-            balance: 0,
-            totalEarned: 0,
-            transactions: []
-          });
-        }
+      const amountToAdd = amountPaid || booking.totalPrice || 0;
 
-        wallet.transactions.push({
-          bookingId: booking._id,
-          cabinId: booking.cabinId,
-          cabinName: cabin.name,
-          amount: booking.totalPrice,
-          type: 'credit',
-          description: `Booking #${booking._id.toString().slice(-6)} - ${cabin.name} (Counter Payment)`,
-          customerName: booking.name,
-          customerMobile: booking.mobile,
-          startDate: booking.startDate,
-          endDate: booking.endDate,
-          transactionId: booking.transactionId || `COUNTER_${Date.now()}`
+      // ✅ Get owner ID from cabin (booking.cabinId.owner)
+      const cabin = booking.cabinId;
+      if (!cabin) {
+        console.error("❌ Cabin not found!");
+        return res.status(404).json({
+          success: false,
+          error: 'Cabin not found for this booking'
         });
-
-        wallet.balance += booking.totalPrice;
-        wallet.totalEarned += booking.totalPrice;
-        await wallet.save();
       }
 
-      // Update booking transaction ID if not present
+      const ownerId = cabin.owner;
+      console.log("Owner ID from cabin:", ownerId);
+      console.log("Amount to add:", amountToAdd);
+
+      if (!ownerId) {
+        console.error("❌ Owner ID not found in cabin!");
+        return res.status(400).json({
+          success: false,
+          error: 'Owner not found for this cabin'
+        });
+      }
+
+      if (amountToAdd <= 0) {
+        console.error("❌ Invalid amount:", amountToAdd);
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid amount to add'
+        });
+      }
+
+      // ✅ Find or create wallet
+      let wallet = await Wallet.findOne({ ownerId: ownerId });
+      if (!wallet) {
+        console.log("Creating new wallet for owner:", ownerId);
+        wallet = new Wallet({
+          ownerId: ownerId,
+          balance: 0,
+          totalEarned: 0,
+          transactions: [],
+          withdrawals: []
+        });
+      }
+
+      // ✅ Add transaction
+      wallet.transactions.push({
+        bookingId: booking._id,
+        cabinId: booking.cabinId?._id,
+        cabinName: cabin.name || 'Unknown Cabin',
+        amount: amountToAdd,
+        type: 'credit',
+        description: `Booking #${booking._id.toString().slice(-6)} - ${cabin.name || 'Cabin'} (Cash Payment)`,
+        customerName: booking.name || 'Customer',
+        customerMobile: booking.mobile || 'N/A',
+        startDate: booking.startDate,
+        endDate: booking.endDate,
+        transactionId: booking.transactionId || `CASH_${Date.now()}`
+      });
+
+      // ✅ Update wallet balance
+      wallet.balance = (wallet.balance || 0) + amountToAdd;
+      wallet.totalEarned = (wallet.totalEarned || 0) + amountToAdd;
+      wallet.updatedAt = new Date();
+
+      await wallet.save();
+      console.log("✅ Wallet updated successfully:", {
+        ownerId: ownerId,
+        amountAdded: amountToAdd,
+        newBalance: wallet.balance,
+        totalEarned: wallet.totalEarned
+      });
+
+      // ✅ Update booking
+      booking.amountPaid = amountToAdd;
+      booking.isPaidToOwner = true;
       if (!booking.transactionId) {
-        booking.transactionId = `COUNTER_PAID_${Date.now()}`;
+        booking.transactionId = `CASH_PAID_${Date.now()}`;
       }
-    }
 
-    await booking.save();
+      await booking.save();
+      console.log("✅ Booking updated with payment details");
+    }
 
     res.json({
       success: true,
@@ -1255,7 +1703,9 @@ router.put('/bookingpayment-status/:bookingId', async (req, res) => {
         id: booking._id,
         paymentStatus: booking.paymentStatus,
         paymentMethod: booking.paymentMethod,
-        totalPrice: booking.totalPrice
+        totalPrice: booking.totalPrice,
+        amountPaid: booking.amountPaid || booking.totalPrice,
+        isPaidToOwner: booking.isPaidToOwner || false
       }
     });
 
@@ -1263,7 +1713,218 @@ router.put('/bookingpayment-status/:bookingId', async (req, res) => {
     console.error('Update payment status error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to update payment status'
+      error: 'Failed to update payment status: ' + error.message
+    });
+  }
+});
+
+
+// ======================
+// UPDATE VISITING TIMINGS
+// ======================
+router.put('/update-timings/:bookingId', auth, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { date, checkIn, checkOut } = req.body;
+
+    console.log("===== UPDATE VISITING TIMINGS =====");
+    console.log("Booking ID:", bookingId);
+    console.log("Date:", date);
+    console.log("Check In:", checkIn);
+    console.log("Check Out:", checkOut);
+
+    // Validate
+    if (!date || !checkIn || !checkOut) {
+      return res.status(400).json({
+        success: false,
+        error: 'Date, check-in and check-out are required'
+      });
+    }
+
+    // Find booking with populated cabin
+    const booking = await Booking.findById(bookingId).populate('cabinId', 'owner');
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        error: 'Booking not found'
+      });
+    }
+
+    // Get user ID from auth middleware
+    const userId = req.user.id;
+
+    // Check if user is the owner of the cabin
+    if (!booking.cabinId || booking.cabinId.owner.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'You are not authorized to update this booking'
+      });
+    }
+
+    // Initialize visitingTimings if not exists
+    if (!booking.visitingTimings) {
+      booking.visitingTimings = [];
+    }
+
+    // ✅ Calculate hours difference for this timing
+    const checkInTime = new Date(`${date}T${checkIn}`);
+    const checkOutTime = new Date(`${date}T${checkOut}`);
+    
+    if (checkOutTime <= checkInTime) {
+      return res.status(400).json({
+        success: false,
+        error: 'Check-out time must be after check-in time'
+      });
+    }
+
+    const hoursDiff = (checkOutTime - checkInTime) / (1000 * 60 * 60);
+    console.log("Hours for this visit:", hoursDiff);
+
+    // ✅ Add new timing
+    booking.visitingTimings.push({
+      date: date,
+      checkIn: checkIn,
+      checkOut: checkOut,
+      addedAt: new Date()
+    });
+
+    // ✅ Update hoursUsed and remainingHours
+    booking.hoursUsed = (booking.hoursUsed || 0) + hoursDiff;
+    booking.remainingHours = Math.max(0, (booking.totalHours || 0) - booking.hoursUsed);
+
+    // ✅ If remainingHours is 0, update status to completed
+    if (booking.remainingHours <= 0) {
+      booking.status = 'completed';
+      booking.remainingHours = 0;
+      console.log("✅ Booking completed - all hours used");
+    }
+
+    booking.updatedAt = new Date();
+    await booking.save();
+
+    console.log("✅ Timing added successfully:", {
+      bookingId: booking._id,
+      totalTimings: booking.visitingTimings.length,
+      hoursUsed: booking.hoursUsed,
+      remainingHours: booking.remainingHours,
+      status: booking.status
+    });
+
+    res.json({
+      success: true,
+      message: 'Timing added successfully',
+      booking: {
+        id: booking._id,
+        visitingTimings: booking.visitingTimings,
+        hoursUsed: booking.hoursUsed,
+        remainingHours: booking.remainingHours,
+        totalHours: booking.totalHours,
+        status: booking.status
+      }
+    });
+
+  } catch (error) {
+    console.error('Update timings error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update timings: ' + error.message
+    });
+  }
+});
+
+// ======================
+// DELETE VISITING TIMING
+// ======================
+router.put('/delete-timing/:bookingId', auth, async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { timingIndex } = req.body;
+
+    console.log("Booking ID:", bookingId);
+    console.log("Timing Index:", timingIndex);
+
+    if (timingIndex === undefined || timingIndex === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'Timing index is required'
+      });
+    }
+
+    // Find booking with populated cabin
+    const booking = await Booking.findById(bookingId).populate('cabinId', 'owner');
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        error: 'Booking not found'
+      });
+    }
+
+    // ✅ Get user ID from auth middleware
+    const userId = req.user.id;
+
+    // Check if user is the owner of the cabin
+    if (!booking.cabinId || booking.cabinId.owner.toString() !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'You are not authorized to update this booking'
+      });
+    }
+
+    // Check if timing exists
+    if (!booking.visitingTimings || booking.visitingTimings.length <= timingIndex) {
+      return res.status(400).json({
+        success: false,
+        error: 'Timing entry not found'
+      });
+    }
+
+    // ✅ Get the timing being deleted to subtract hours
+    const deletedTiming = booking.visitingTimings[timingIndex];
+    const checkInTime = new Date(`${deletedTiming.date}T${deletedTiming.checkIn}`);
+    const checkOutTime = new Date(`${deletedTiming.date}T${deletedTiming.checkOut}`);
+    const hoursToSubtract = (checkOutTime - checkInTime) / (1000 * 60 * 60);
+
+    // Remove timing
+    booking.visitingTimings.splice(timingIndex, 1);
+
+    // ✅ Update hoursUsed and remainingHours
+    booking.hoursUsed = Math.max(0, (booking.hoursUsed || 0) - hoursToSubtract);
+    booking.remainingHours = (booking.totalHours || 0) - booking.hoursUsed;
+
+    // ✅ If remainingHours > 0 and status was completed, revert to confirmed
+    if (booking.remainingHours > 0 && booking.status === 'completed') {
+      booking.status = 'confirmed';
+    }
+
+    booking.updatedAt = new Date();
+    await booking.save();
+
+    console.log("✅ Timing deleted successfully:", {
+      bookingId: booking._id,
+      remainingTimings: booking.visitingTimings.length,
+      hoursUsed: booking.hoursUsed,
+      remainingHours: booking.remainingHours,
+      status: booking.status
+    });
+
+    res.json({
+      success: true,
+      message: 'Timing deleted successfully',
+      booking: {
+        id: booking._id,
+        visitingTimings: booking.visitingTimings,
+        hoursUsed: booking.hoursUsed,
+        remainingHours: booking.remainingHours,
+        totalHours: booking.totalHours,
+        status: booking.status
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete timing error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete timing: ' + error.message
     });
   }
 });

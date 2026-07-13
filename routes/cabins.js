@@ -31,7 +31,7 @@ const upload = multer({ storage });
 // ============================================
 
 // ======================
-// 1. GET ALL CABIN PAYMENTS (Admin) - SPECIFIC ROUTE - SABSE PEHLE
+// 1. GET ALL CABIN PAYMENTS (Admin) - FIXED
 // ======================
 router.get('/all-cabinpayments', async (req, res) => {
   try {
@@ -41,7 +41,7 @@ router.get('/all-cabinpayments', async (req, res) => {
         populate: {
           path: 'owner',
           model: 'User',
-          select: 'name email mobile address'
+          select: 'name email mobile organizationName gstNumber address'
         }
       })
       .sort({ createdAt: -1 });
@@ -69,6 +69,9 @@ router.get('/all-cabinpayments', async (req, res) => {
       totalAmount: orders.reduce((sum, o) => sum + o.amount, 0),
       totalPayments: orders.reduce((sum, o) => sum + (o.paymentCount || 1), 0)
     };
+
+    // ✅ LOG to check if data is coming
+    console.log("First order owner:", orders[0]?.cabin?.owner);
 
     res.status(200).json({
       success: true,
@@ -165,7 +168,6 @@ router.get("/", async (req, res) => {
 router.post("/", auth, upload.array("images", 5), async (req, res) => {
   try {
     console.log("=== ADD CABIN REQUEST STARTED ===");
-    console.log("Headers:", req.headers);
     console.log("User from Token:", req.user);
     console.log("Request Body:", req.body);
     console.log("Files:", req.files);
@@ -175,7 +177,7 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       return res.status(401).json({ message: "User authentication failed. No ID found." });
     }
 
-    const { name, description, capacity, address, price } = req.body;
+    const { name, description, capacity, address, price, cabinType } = req.body;
 
     let amenities = {};
     try {
@@ -183,6 +185,14 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
     } catch (parseError) {
       console.error("❌ Error parsing amenities:", parseError);
       return res.status(400).json({ message: "Invalid amenities format" });
+    }
+
+    let pricingPlans = [];
+    try {
+      pricingPlans = req.body.pricingPlans ? JSON.parse(req.body.pricingPlans) : [];
+    } catch (parseError) {
+      console.error("❌ Error parsing pricingPlans:", parseError);
+      return res.status(400).json({ message: "Invalid pricingPlans format" });
     }
 
     const images = req.files?.map((file) => file.path) || [];
@@ -199,8 +209,12 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       capacity: Number(capacity),
       address,
       price: Number(price),
+      cabinType: cabinType || 'normal',
       amenities,
+      pricingPlans,
       images,
+      isActive: true,          // ✅ Default active
+      hasActiveOrder: true,    // ✅ Default active order
     });
 
     console.log("Saving new cabin to database...");
@@ -224,7 +238,7 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
 });
 
 // ======================
-// 6. CREATE CABIN ORDER WITH RAZORPAY
+// 6. CREATE CABIN ORDER WITH RAZORPAY (With GST)
 // ======================
 router.post('/createcabinorder', auth, async (req, res) => {
   try {
@@ -258,20 +272,35 @@ router.post('/createcabinorder', auth, async (req, res) => {
       });
     }
 
+    // ✅ Calculate amount with GST
+    const GST_RATE = 0.18; // 18% GST
     const userCabins = await Cabin.find({ owner: userId });
     const isFirstCabin = userCabins.length === 0;
-    const amount = isFirstCabin ? 2000 : 1000;
+    const baseAmount = isFirstCabin ? 2000 : 1000;
+    const gstAmount = baseAmount * GST_RATE;
+    const totalAmount = baseAmount + gstAmount;
+
+    console.log('💰 Amount Breakdown:', {
+      baseAmount,
+      gstAmount,
+      totalAmount,
+      isFirstCabin
+    });
 
     const shortReceipt = `cabin_${Date.now().toString().slice(-8)}`;
     
     const options = {
-      amount: amount * 100,
+      amount: Math.round(totalAmount * 100), // Convert to paise and round
       currency: 'INR',
       receipt: shortReceipt,
       notes: {
         cabinId: cabinId.toString(),
         userId: userId.toString(),
-        isFirstCabin: isFirstCabin.toString()
+        isFirstCabin: isFirstCabin.toString(),
+        baseAmount: baseAmount.toString(),
+        gstAmount: gstAmount.toString(),
+        totalAmount: totalAmount.toString(),
+        gstRate: '18%'
       }
     };
 
@@ -282,15 +311,20 @@ router.post('/createcabinorder', auth, async (req, res) => {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 30);
 
+    // ✅ Store all amounts with GST
     const order = new CabinOrder({
       cabin: cabinId,
       owner: userId,
-      amount: amount,
+      baseAmount: baseAmount,      // ✅ Store base amount
+      gstAmount: gstAmount,        // ✅ Store GST amount
+      amount: totalAmount,         // ✅ Total amount with GST
+      gstRate: GST_RATE,           // ✅ Store GST rate
       paymentStatus: 'pending',
       razorpayOrderId: razorpayOrder.id,
       startDate: new Date(),
       expiryDate: expiryDate,
-      status: 'active'
+      status: 'active',
+      isFirstCabin: isFirstCabin
     });
 
     await order.save();
@@ -301,10 +335,13 @@ router.post('/createcabinorder', auth, async (req, res) => {
       order: {
         id: order._id,
         razorpayOrderId: razorpayOrder.id,
-        amount: amount,
+        baseAmount: baseAmount,
+        gstAmount: gstAmount,
+        amount: totalAmount,
         currency: 'INR',
         expiryDate: order.expiryDate,
-        isFirstCabin: isFirstCabin
+        isFirstCabin: isFirstCabin,
+        gstRate: '18%'
       },
       razorpayKey: process.env.RAZORPAY_KEY_ID || 'rzp_test_BxtRNvflG06PTV'
     });
@@ -330,7 +367,6 @@ router.post('/verify-cabin-payment', auth, async (req, res) => {
     console.log('Verifying payment:', {
       razorpay_order_id,
       razorpay_payment_id,
-      razorpay_signature,
       cabinId
     });
 
@@ -374,6 +410,7 @@ router.post('/verify-cabin-payment', auth, async (req, res) => {
     order.paymentStatus = 'completed';
     order.razorpayPaymentId = razorpay_payment_id;
     order.razorpaySignature = razorpay_signature;
+    order.paidAt = new Date();
     await order.save();
 
     const cabin = await Cabin.findById(order.cabin);
@@ -390,7 +427,10 @@ router.post('/verify-cabin-payment', auth, async (req, res) => {
       transactionId: order.transactionId,
       order: {
         id: order._id,
+        baseAmount: order.baseAmount,
+        gstAmount: order.gstAmount,
         amount: order.amount,
+        gstRate: order.gstRate,
         transactionId: order.transactionId,
         expiryDate: order.expiryDate
       }
@@ -404,7 +444,6 @@ router.post('/verify-cabin-payment', auth, async (req, res) => {
     });
   }
 });
-
 // ======================
 // 8. RENEW PAYMENT
 // ======================

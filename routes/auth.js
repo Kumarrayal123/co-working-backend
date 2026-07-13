@@ -208,7 +208,17 @@ router.post(
   ]),
   async (req, res) => {
     try {
-      const { name, email, password, mobile, address, role } = req.body;
+      const { 
+        name, 
+        email, 
+        password, 
+        mobile, 
+        address, 
+        role,
+        organizationName,
+        gstNumber,
+        dmhoNumber
+      } = req.body;
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -221,7 +231,11 @@ router.post(
         mobile,
         address,
         role: role || "user",
-        status: isDoctor ? "pending" : "active"
+        status: isDoctor ? "pending" : "active",
+        // New fields
+        organizationName: organizationName || "",
+        gstNumber: gstNumber || "",
+        dmhoNumber: dmhoNumber || ""
       };
 
       if (isDoctor) {
@@ -253,7 +267,6 @@ router.post(
     }
   }
 );
-
 
 // Get all registered users
 router.get("/all", async (req, res) => {
@@ -369,6 +382,25 @@ router.put("/update-status/:userId", async (req, res) => {
 });
 
 
+
+// Get User Profile by ID
+router.get("/profile/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password");
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    res.json({
+      success: true,
+      user: user
+    });
+    
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 
 module.exports = router;
