@@ -329,6 +329,14 @@ router.post('/createcabinorder', auth, async (req, res) => {
 
     await order.save();
 
+
+    // ✅ Save expiry date in Cabin collection also
+await Cabin.findByIdAndUpdate(cabinId, {
+  $set: {
+    expiryDate: expiryDate
+  }
+});
+
     res.status(201).json({
       success: true,
       message: 'Order created. Please complete payment.',
@@ -413,13 +421,15 @@ router.post('/verify-cabin-payment', auth, async (req, res) => {
     order.paidAt = new Date();
     await order.save();
 
-    const cabin = await Cabin.findById(order.cabin);
-    if (cabin) {
-      cabin.isActive = true;
-      cabin.hasActiveOrder = true;
-      cabin.currentOrder = order._id;
-      await cabin.save();
-    }
+const cabin = await Cabin.findById(order.cabin);
+
+if (cabin) {
+  cabin.isActive = true;
+  cabin.hasActiveOrder = true;
+  cabin.currentOrder = order._id;
+  cabin.expiryDate = order.expiryDate; // ✅ Save expiry date
+  await cabin.save();
+}
 
     res.status(200).json({
       success: true,

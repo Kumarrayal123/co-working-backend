@@ -45,6 +45,11 @@ const cabinSchema = new mongoose.Schema({
     default: true           // ✅ Active by default
   },
 
+  expiryDate: {
+  type: Date,
+  default: null
+},
+
   createdAt: { type: Date, default: Date.now },
 });
 
