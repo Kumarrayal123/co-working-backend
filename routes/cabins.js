@@ -5,6 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const auth = require("../middleware/auth");
 const CabinOrder = require('../model/CabinOrder');
+const Query = require('../model/Query');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
 
@@ -141,8 +142,12 @@ router.get('/my-cabinpayments', auth, async (req, res) => {
 router.get("/user", auth, async (req, res) => {
   try {
     console.log("Fetching cabins for user:", req.user.id);
-    const cabins = await Cabin.find({ owner: req.user.id });
+
+    const cabins = await Cabin.find({ owner: req.user.id })
+      .sort({ createdAt: -1 }); // Latest first
+
     console.log("Found cabins count:", cabins.length);
+
     res.json(cabins);
   } catch (err) {
     console.error("Error fetching user cabins:", err);
@@ -179,6 +184,7 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
 
     const { name, description, capacity, address, price, cabinType } = req.body;
 
+    // Parse amenities
     let amenities = {};
     try {
       amenities = req.body.amenities ? JSON.parse(req.body.amenities) : {};
@@ -187,12 +193,56 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       return res.status(400).json({ message: "Invalid amenities format" });
     }
 
+    // Parse pricingPlans
     let pricingPlans = [];
     try {
       pricingPlans = req.body.pricingPlans ? JSON.parse(req.body.pricingPlans) : [];
     } catch (parseError) {
       console.error("❌ Error parsing pricingPlans:", parseError);
       return res.status(400).json({ message: "Invalid pricingPlans format" });
+    }
+
+    // ✅ PARSE SEATS - NEW
+    let seats = [];
+    try {
+      seats = req.body.seats ? JSON.parse(req.body.seats) : [];
+    } catch (parseError) {
+      console.error("❌ Error parsing seats:", parseError);
+      return res.status(400).json({ message: "Invalid seats format" });
+    }
+
+    // ✅ Validate seats
+    if (!seats || seats.length === 0) {
+      console.error("❌ No seats provided");
+      return res.status(400).json({ message: "At least one seat is required" });
+    }
+
+    // Check if seat count matches capacity
+    if (seats.length !== Number(capacity)) {
+      console.error(`❌ Seat count (${seats.length}) doesn't match capacity (${capacity})`);
+      return res.status(400).json({ 
+        message: `Number of seats (${seats.length}) does not match capacity (${capacity})` 
+      });
+    }
+
+    // Check for duplicate seat numbers
+    const seatNumbers = seats.map(s => s.number);
+    const uniqueNumbers = new Set(seatNumbers);
+    if (seatNumbers.length !== uniqueNumbers.size) {
+      console.error("❌ Duplicate seat numbers found");
+      return res.status(400).json({ message: "Seat numbers must be unique" });
+    }
+
+    // Validate each seat has name and number
+    for (let seat of seats) {
+      if (!seat.name || !seat.number) {
+        console.error("❌ Invalid seat data:", seat);
+        return res.status(400).json({ message: "Each seat must have name and number" });
+      }
+      if (seat.number < 1) {
+        console.error("❌ Invalid seat number:", seat.number);
+        return res.status(400).json({ message: "Seat number must be greater than 0" });
+      }
     }
 
     const images = req.files?.map((file) => file.path) || [];
@@ -212,12 +262,14 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       cabinType: cabinType || 'normal',
       amenities,
       pricingPlans,
+      seats,              // ✅ ADD SEATS
       images,
-      isActive: true,          // ✅ Default active
-      hasActiveOrder: true,    // ✅ Default active order
+      isActive: true,
+      hasActiveOrder: true,
     });
 
     console.log("Saving new cabin to database...");
+    console.log("Seats being saved:", seats);
     await newCabin.save();
     console.log("✅ Cabin saved successfully!");
 
@@ -236,6 +288,7 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
     });
   }
 });
+
 
 // ======================
 // 6. CREATE CABIN ORDER WITH RAZORPAY (With GST)
@@ -680,6 +733,160 @@ router.put('/order-status/:orderId', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to update status' 
+    });
+  }
+});
+
+
+
+// ─── 1. SEND QUERY (CREATE) ───
+router.post('/sendquery', async (req, res) => {
+  try {
+    const { name, email, phone, address, message } = req.body;
+
+    if (!name || !email || !phone || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, phone and message are required fields'
+      });
+    }
+
+    const query = new Query({
+      name,
+      email,
+      phone,
+      address: address || '',
+      message
+    });
+
+    await query.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Query submitted successfully! We will contact you soon.',
+      data: query
+    });
+  } catch (error) {
+    console.error('Create query error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit query',
+      error: error.message
+    });
+  }
+});
+
+// ─── 2. GET ALL QUERIES ───
+router.get('/allqueries', async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10 } = req.query;
+
+    const filter = {};
+    if (status) filter.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const limitNum = parseInt(limit);
+
+    const queries = await Query.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    const total = await Query.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: queries,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Get all queries error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch queries',
+      error: error.message
+    });
+  }
+});
+
+// ─── 3. UPDATE QUERY STATUS ───
+router.patch('/updatequery/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required'
+      });
+    }
+
+    const validStatuses = ['pending', 'read', 'replied', 'closed'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Allowed: pending, read, replied, closed'
+      });
+    }
+
+    const query = await Query.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true, runValidators: true }
+    );
+
+    if (!query) {
+      return res.status(404).json({
+        success: false,
+        message: 'Query not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Query status updated to ${status}`,
+      data: query
+    });
+  } catch (error) {
+    console.error('Update query error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update query',
+      error: error.message
+    });
+  }
+});
+
+// ─── 4. DELETE QUERY ───
+router.delete('/deletequery/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const query = await Query.findByIdAndDelete(id);
+
+    if (!query) {
+      return res.status(404).json({
+        success: false,
+        message: 'Query not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Query deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete query error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete query',
+      error: error.message
     });
   }
 });

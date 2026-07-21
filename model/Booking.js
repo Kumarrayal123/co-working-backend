@@ -97,6 +97,28 @@ const bookingSchema = new mongoose.Schema({
     default: 'online'
   },
 
+
+  // ✅ SEAT SELECTION FIELDS - NEW
+  selectedSeats: {
+    type: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Cabin.seats'
+    }],
+    default: []
+  },
+  extraCharge: {
+    type: Number,
+    default: 0
+  },
+  seatCount: {
+    type: Number,
+    default: 0
+  },
+  seatExtraChargePerSeat: {
+    type: Number,
+    default: 100
+  },
+
   // models/Booking.js - Add amountPaid field
 amountPaid: {
   type: Number,
@@ -224,6 +246,101 @@ amountPaid: {
   checkedInAddress: {
     type: String,
     default: ''
+  },
+
+  // Payment Details
+  paymentMethod: {
+    type: String,
+    enum: ['online', 'cash', 'counter', 'upi', 'card'],
+    default: 'cash'
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded'],
+    default: 'pending'
+  },
+  transactionId: {
+    type: String,
+    default: null
+  },
+  amountPaid: {
+    type: Number,
+    default: 0
+  },
+  isPaidToOwner: {
+    type: Boolean,
+    default: false
+  },
+  
+  // New Payment Details Object
+  paymentDetails: {
+    mode: {
+      type: String,
+      enum: ['cash', 'upi', 'card'],
+      default: 'cash'
+    },
+    // Card Details
+    cardNumber: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    cardHolderName: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    cardExpiry: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    cardCVV: {
+      type: String,
+      trim: true,
+      default: null,
+      select: false // Don't return CVV in queries
+    },
+    // UPI Details
+    upiId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    upiApp: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    // Common Details
+    paymentDate: {
+      type: Date,
+      default: null
+    },
+    transactionId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    notes: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    screenshot: {
+      type: String,
+      default: null
+    },
+    // Metadata
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null
+    },
+    updatedAt: {
+      type: Date,
+      default: null
+    }
   },
 
   // ======================

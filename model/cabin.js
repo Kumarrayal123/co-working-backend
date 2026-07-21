@@ -39,6 +39,29 @@ const cabinSchema = new mongoose.Schema({
     phone: { type: Boolean, default: false },
   },
     cabinType: { type: String, enum: ['normal', 'exclusive'], default: 'normal' }, // ✅ New field
+
+      // ✅ SEATS FIELD - NEW
+  seats: {
+    type: [{
+      name: {
+        type: String,
+        required: true
+      },
+      number: {
+        type: Number,
+        required: true
+      }
+    }],
+    default: [],
+    validate: {
+      validator: function(seats) {
+        // Check if all seat numbers are unique
+        const numbers = seats.map(s => s.number);
+        return numbers.length === new Set(numbers).size;
+      },
+      message: 'Seat numbers must be unique'
+    }
+  },
       // ✅ Status fields
   isActive: { 
     type: Boolean, 
