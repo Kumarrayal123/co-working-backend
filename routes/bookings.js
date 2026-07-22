@@ -1201,48 +1201,76 @@ router.get("/userbookings/:userId", async (req, res) => {
 
 
 
-// routes/bookings.js - Add this route
-// ======================
-// UPDATE BOOKING STATUS
-// ======================
-router.put("/update-status/:bookingId", auth, async (req, res) => {
+router.put("/update-status/:bookingId", async (req, res) => {
   try {
     const { bookingId } = req.params;
     const { status } = req.body;
 
-    // Validate status
-    const validStatuses = ['pending', 'confirmed', 'completed', 'cancelled', 'active'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: "Invalid status" });
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: "Status is required"
+      });
     }
 
     const booking = await Booking.findById(bookingId);
-    if (!booking) {
-      return res.status(404).json({ error: "Booking not found" });
-    }
 
-    // Check if user owns this booking
-    if (booking.userId.toString() !== req.user.id) {
-      return res.status(403).json({ error: "Not authorized to update this booking" });
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found"
+      });
     }
 
     booking.status = status;
     await booking.save();
 
-    res.json({
+    res.status(200).json({
       success: true,
-      message: `Booking status updated to ${status}`,
+      message: "Booking status updated successfully",
       booking
     });
 
   } catch (error) {
     console.error("Update status error:", error);
-    res.status(500).json({ error: "Failed to update booking status" });
+    res.status(500).json({
+      success: false,
+      message: "Failed to update booking status"
+    });
   }
 });
 
+// ======================
+// DELETE BOOKING
+// ======================
+router.delete("/deletebooking/:bookingId", async (req, res) => {
+  try {
+    const { bookingId } = req.params;
 
+    const booking = await Booking.findById(bookingId);
 
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found"
+      });
+    }
+
+    await Booking.findByIdAndDelete(bookingId);
+
+    res.status(200).json({
+      success: true,
+      message: "Booking deleted successfully"
+    });
+
+  } catch (error) {
+    console.error("Delete booking error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete booking"
+    });
+  }
+});
 // ======================
 // GET MY WALLET
 // ======================
