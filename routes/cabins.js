@@ -89,6 +89,47 @@ router.get('/all-cabinpayments', async (req, res) => {
   }
 });
 
+
+
+// ─── 2. GET ALL QUERIES ───
+router.get('/allqueries', async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10 } = req.query;
+
+    const filter = {};
+    if (status) filter.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const limitNum = parseInt(limit);
+
+    const queries = await Query.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    const total = await Query.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: queries,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Get all queries error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch queries',
+      error: error.message
+    });
+  }
+});
+
+
 // ======================
 // 2. GET MY CABIN PAYMENTS - SPECIFIC ROUTE
 // ======================
@@ -170,21 +211,16 @@ router.get("/", async (req, res) => {
 // ======================
 // 5. CREATE CABIN - POST
 // ======================
-router.post("/", auth, upload.array("images", 5), async (req, res) => {
+router.post("/", upload.array("images", 5), async (req, res) => {
   try {
     console.log("=== ADD CABIN REQUEST STARTED ===");
     console.log("User from Token:", req.user);
     console.log("Request Body:", req.body);
     console.log("Files:", req.files);
 
-    if (!req.user || !req.user.id) {
-      console.error("❌ CRITICAL: User ID missing from request object.");
-      return res.status(401).json({ message: "User authentication failed. No ID found." });
-    }
-
     const { name, description, capacity, address, price, cabinType } = req.body;
 
-    // Parse amenities
+    // ✅ PARSE AMENITIES
     let amenities = {};
     try {
       amenities = req.body.amenities ? JSON.parse(req.body.amenities) : {};
@@ -193,7 +229,7 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       return res.status(400).json({ message: "Invalid amenities format" });
     }
 
-    // Parse pricingPlans
+    // ✅ PARSE PRICING PLANS
     let pricingPlans = [];
     try {
       pricingPlans = req.body.pricingPlans ? JSON.parse(req.body.pricingPlans) : [];
@@ -202,7 +238,7 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       return res.status(400).json({ message: "Invalid pricingPlans format" });
     }
 
-    // ✅ PARSE SEATS - NEW
+    // ✅ PARSE SEATS (Optional)
     let seats = [];
     try {
       seats = req.body.seats ? JSON.parse(req.body.seats) : [];
@@ -211,37 +247,31 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       return res.status(400).json({ message: "Invalid seats format" });
     }
 
-    // ✅ Validate seats
-    if (!seats || seats.length === 0) {
-      console.error("❌ No seats provided");
-      return res.status(400).json({ message: "At least one seat is required" });
-    }
-
-    // Check if seat count matches capacity
-    if (seats.length !== Number(capacity)) {
-      console.error(`❌ Seat count (${seats.length}) doesn't match capacity (${capacity})`);
-      return res.status(400).json({ 
-        message: `Number of seats (${seats.length}) does not match capacity (${capacity})` 
-      });
-    }
-
-    // Check for duplicate seat numbers
-    const seatNumbers = seats.map(s => s.number);
-    const uniqueNumbers = new Set(seatNumbers);
-    if (seatNumbers.length !== uniqueNumbers.size) {
-      console.error("❌ Duplicate seat numbers found");
-      return res.status(400).json({ message: "Seat numbers must be unique" });
-    }
-
-    // Validate each seat has name and number
-    for (let seat of seats) {
-      if (!seat.name || !seat.number) {
-        console.error("❌ Invalid seat data:", seat);
-        return res.status(400).json({ message: "Each seat must have name and number" });
+    // ✅ SEATS ARE OPTIONAL - Only validate if seats provided
+    if (seats && seats.length > 0) {
+      if (seats.length !== Number(capacity)) {
+        console.error(`❌ Seat count (${seats.length}) doesn't match capacity (${capacity})`);
+        return res.status(400).json({ 
+          message: `Number of seats (${seats.length}) does not match capacity (${capacity})` 
+        });
       }
-      if (seat.number < 1) {
-        console.error("❌ Invalid seat number:", seat.number);
-        return res.status(400).json({ message: "Seat number must be greater than 0" });
+
+      const seatNumbers = seats.map(s => s.number);
+      const uniqueNumbers = new Set(seatNumbers);
+      if (seatNumbers.length !== uniqueNumbers.size) {
+        console.error("❌ Duplicate seat numbers found");
+        return res.status(400).json({ message: "Seat numbers must be unique" });
+      }
+
+      for (let seat of seats) {
+        if (!seat.name || !seat.number) {
+          console.error("❌ Invalid seat data:", seat);
+          return res.status(400).json({ message: "Each seat must have name and number" });
+        }
+        if (seat.number < 1) {
+          console.error("❌ Invalid seat number:", seat.number);
+          return res.status(400).json({ message: "Seat number must be greater than 0" });
+        }
       }
     }
 
@@ -252,8 +282,21 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
+    // ✅ GET OWNER ID - DEFAULT ADMIN ID IF NOT AUTHENTICATED
+    const DEFAULT_ADMIN_ID = "68ebe9ee8f06d33ee022d665";
+    
+    let ownerId;
+    if (req.user && req.user.id) {
+      ownerId = req.user.id;
+      console.log("✅ Using authenticated user as owner:", ownerId);
+    } else {
+      // ✅ Use default admin ID if no user found
+      ownerId = DEFAULT_ADMIN_ID;
+      console.log("⚠️ No authenticated user found. Using default admin ID:", ownerId);
+    }
+
     const newCabin = new Cabin({
-      owner: req.user.id,
+      owner: ownerId,
       name,
       description,
       capacity: Number(capacity),
@@ -262,13 +305,14 @@ router.post("/", auth, upload.array("images", 5), async (req, res) => {
       cabinType: cabinType || 'normal',
       amenities,
       pricingPlans,
-      seats,              // ✅ ADD SEATS
+      seats: seats || [],
       images,
       isActive: true,
       hasActiveOrder: true,
     });
 
     console.log("Saving new cabin to database...");
+    console.log("Owner ID:", ownerId);
     console.log("Seats being saved:", seats);
     await newCabin.save();
     console.log("✅ Cabin saved successfully!");
@@ -579,57 +623,149 @@ router.get("/:id", async (req, res) => {
 // ======================
 // 10. UPDATE CABIN (GENERIC - :id)
 // ======================
-router.put("/:id", auth, upload.array("images", 5), async (req, res) => {
+router.put("/:id", upload.array("images", 5), async (req, res) => {
   try {
+    console.log("=== UPDATE CABIN REQUEST STARTED ===");
+    console.log("Cabin ID:", req.params.id);
+    console.log("User from Token:", req.user);
+    console.log("Request Body:", req.body);
+
     const cabin = await Cabin.findById(req.params.id);
 
     if (!cabin) {
       return res.status(404).json({ message: "Cabin not found" });
     }
 
-    if (cabin.owner.toString() !== req.user.id) {
-      return res.status(403).json({ message: "Not authorized" });
+    // ✅ DEFAULT ADMIN ID
+    const DEFAULT_ADMIN_ID = "68ebe9ee8f06d33ee022d665";
+    
+    // ✅ CHECK AUTHORIZATION - If user is authenticated and not admin, check ownership
+    const isAdmin = req.user && req.user.id === DEFAULT_ADMIN_ID;
+    const isOwner = req.user && cabin.owner && cabin.owner.toString() === req.user.id;
+    
+    // If user is authenticated but not admin and not owner, deny access
+    if (req.user && req.user.id && !isAdmin && !isOwner) {
+      console.log("❌ Unauthorized: User is not admin or owner");
+      return res.status(403).json({ 
+        message: "Not authorized to update this cabin" 
+      });
     }
 
-    const { name, description, capacity, address, price } = req.body;
+    // If no user is authenticated (admin via frontend without login), allow update
+    // but only if the cabin owner is the default admin
+    if (!req.user || !req.user.id) {
+      console.log("⚠️ No authenticated user. Checking if cabin owner is default admin...");
+      if (cabin.owner && cabin.owner.toString() !== DEFAULT_ADMIN_ID) {
+        console.log("❌ Cabin owner is not default admin. Update denied.");
+        return res.status(403).json({ 
+          message: "Not authorized to update this cabin" 
+        });
+      }
+      console.log("✅ Cabin owner is default admin. Allowing update.");
+    }
 
+    const { name, description, capacity, address, price, cabinType } = req.body;
+
+    // ✅ UPDATE BASIC FIELDS
     cabin.name = name || cabin.name;
     cabin.description = description || cabin.description;
     cabin.capacity = capacity || cabin.capacity;
     cabin.address = address || cabin.address;
+    cabin.cabinType = cabinType || cabin.cabinType || 'normal';
 
+    // ✅ UPDATE AMENITIES
     if (req.body.amenities) {
-      cabin.amenities = JSON.parse(req.body.amenities);
+      try {
+        cabin.amenities = JSON.parse(req.body.amenities);
+      } catch (e) {
+        console.error("❌ Error parsing amenities:", e);
+        return res.status(400).json({ message: "Invalid amenities format" });
+      }
     }
 
+    // ✅ UPDATE PRICING PLANS
     if (req.body.pricingPlans) {
       try {
         const plans = JSON.parse(req.body.pricingPlans);
         cabin.pricingPlans = plans;
       } catch (e) {
+        console.error("❌ Error parsing pricingPlans:", e);
         return res.status(400).json({ message: "Invalid pricingPlans format" });
       }
     }
 
-    if (price !== undefined) {
+    // ✅ UPDATE SEATS
+    if (req.body.seats) {
+      try {
+        const seats = JSON.parse(req.body.seats);
+        if (seats && seats.length > 0) {
+          // Validate seats
+          const seatNumbers = seats.map(s => s.number);
+          const uniqueNumbers = new Set(seatNumbers);
+          if (seatNumbers.length !== uniqueNumbers.size) {
+            return res.status(400).json({ message: "Seat numbers must be unique" });
+          }
+          
+          for (let seat of seats) {
+            if (!seat.name || !seat.number) {
+              return res.status(400).json({ message: "Each seat must have name and number" });
+            }
+            if (seat.number < 1) {
+              return res.status(400).json({ message: "Seat number must be greater than 0" });
+            }
+          }
+          
+          // Check if seat count matches capacity
+          if (seats.length !== Number(cabin.capacity)) {
+            return res.status(400).json({ 
+              message: `Number of seats (${seats.length}) does not match capacity (${cabin.capacity})` 
+            });
+          }
+          
+          cabin.seats = seats;
+        } else {
+          cabin.seats = [];
+        }
+      } catch (e) {
+        console.error("❌ Error parsing seats:", e);
+        return res.status(400).json({ message: "Invalid seats format" });
+      }
+    }
+
+    // ✅ UPDATE PRICE
+    if (price !== undefined && price !== null && price !== "") {
       cabin.price = Number(price) || 0;
     } else if (cabin.pricingPlans && cabin.pricingPlans.length > 0 && !cabin.price) {
       cabin.price = Math.min(...cabin.pricingPlans.map((p) => Number(p.cost) || 0));
     }
 
+    // ✅ UPDATE IMAGES
     if (req.files && req.files.length > 0) {
       cabin.images = req.files.map((file) => file.path);
     }
 
-    await cabin.save();
+    // ✅ UPDATE ISACTIVE (if provided)
+    if (req.body.isActive !== undefined && req.body.isActive !== null) {
+      cabin.isActive = req.body.isActive === 'true' || req.body.isActive === true;
+    }
 
-    res.json({ message: "Cabin updated successfully", cabin });
+    console.log("Saving updated cabin...");
+    await cabin.save();
+    console.log("✅ Cabin updated successfully!");
+
+    res.json({ 
+      success: true,
+      message: "Cabin updated successfully", 
+      cabin 
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ UPDATE CABIN ERROR:", err);
+    res.status(500).json({ 
+      message: "Server error",
+      error: err.message 
+    });
   }
 });
-
 // ======================
 // 11. DELETE CABIN (GENERIC - :id)
 // ======================
@@ -776,43 +912,6 @@ router.post('/sendquery', async (req, res) => {
   }
 });
 
-// ─── 2. GET ALL QUERIES ───
-router.get('/allqueries', async (req, res) => {
-  try {
-    const { status, page = 1, limit = 10 } = req.query;
-
-    const filter = {};
-    if (status) filter.status = status;
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const limitNum = parseInt(limit);
-
-    const queries = await Query.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
-
-    const total = await Query.countDocuments(filter);
-
-    res.status(200).json({
-      success: true,
-      data: queries,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
-      }
-    });
-  } catch (error) {
-    console.error('Get all queries error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch queries',
-      error: error.message
-    });
-  }
-});
 
 // ─── 3. UPDATE QUERY STATUS ───
 router.patch('/updatequery/:id', async (req, res) => {
