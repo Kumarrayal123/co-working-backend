@@ -22,6 +22,10 @@ const userSchema = new mongoose.Schema({
   organizationName: { type: String, },
   role: { type: String, enum: ["user", "doctor"], default: "user" },
 
+  isDoctor: {
+    type: Boolean,
+  },
+
   // Doctor Verification Documents
   adharCard: { type: String, },          // file/url
   panCard: { type: String, },            // file/url

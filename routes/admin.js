@@ -223,19 +223,53 @@ router.get('/dashboard', async (req, res) => {
         createdAt: b.createdAt
       }));
 
-    // 7. Monthly booking chart data (ALL bookings)
+    // 7. Monthly booking chart data with bookings, cabins, hours, and cabin names
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const monthlyMap = {};
+    
+    // Initialize monthly data with all months
+    const monthlyData = {};
+    months.forEach(m => {
+      monthlyData[m] = {
+        bookings: 0,
+        cabins: 0,
+        hours: 0,
+        cabinNames: [] // Array to store unique cabin names per month
+      };
+    });
+
+    // Process each booking to populate monthly data
     bookings.forEach(b => {
       if (b.createdAt) {
         const date = new Date(b.createdAt);
         const month = months[date.getMonth()];
-        monthlyMap[month] = (monthlyMap[month] || 0) + 1;
+        
+        // Count bookings
+        monthlyData[month].bookings = (monthlyData[month].bookings || 0) + 1;
+        
+        // Count cabins and collect cabin names
+        if (b.cabinId) {
+          monthlyData[month].cabins = (monthlyData[month].cabins || 0) + 1;
+          
+          // Add cabin name if not already in the list
+          const cabinName = b.cabinId.name || 'Unknown Cabin';
+          if (!monthlyData[month].cabinNames.includes(cabinName)) {
+            monthlyData[month].cabinNames.push(cabinName);
+          }
+        }
+        
+        // Calculate hours (if totalHours exists, otherwise default to 1)
+        const hours = b.totalHours || 1;
+        monthlyData[month].hours = (monthlyData[month].hours || 0) + hours;
       }
     });
+
+    // Build the final chart data array
     const bookingChartData = months.map(m => ({
       month: m,
-      bookings: monthlyMap[m] || 0
+      bookings: monthlyData[m].bookings || 0,
+      cabins: monthlyData[m].cabins || 0,
+      hours: monthlyData[m].hours || 0,
+      cabinNames: monthlyData[m].cabinNames || [] // Array of cabin names for that month
     }));
 
     res.json({

@@ -290,7 +290,7 @@ router.get("/all", async (req, res) => {
 // Login
 router.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, isDoctor } = req.body;
 
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "User not found" });
@@ -298,7 +298,13 @@ router.post("/login", async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
 
-    // Return user data including _id
+    // If isDoctor is sent from frontend and user is a doctor, update the database
+    if (isDoctor === true) {
+      await User.findByIdAndUpdate(user._id, { isDoctor: true });
+      user.isDoctor = true;
+    }
+
+    // Return user data including _id and isDoctor
     res.json({
       message: "Login Successful",
       token: jwt.sign(
@@ -311,7 +317,9 @@ router.post("/login", async (req, res) => {
         name: user.name,
         email: user.email,
         mobile: user.mobile,
-        address: user.address
+        address: user.address,
+        isDoctor: user.isDoctor || false,
+        role: user.role || "user"
       }
     });
   } catch (err) {
@@ -319,8 +327,6 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 
 // Update Document and User Status
 router.put("/update-status/:userId", async (req, res) => {
