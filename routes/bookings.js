@@ -1307,6 +1307,103 @@ router.get('/my-wallet', auth, async (req, res) => {
 
 
 // ======================
+// ADMIN WALLET - SINGLE API (NO AUTH)
+// ======================
+router.get('/admin-wallet', async (req, res) => {
+  try {
+    const ADMIN_ID = "68ebe9ee8f06d33ee022d665";
+    
+    // Get query params for filtering
+    const { type, status, search, page = 1, limit = 50 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Find or create wallet
+    let wallet = await Wallet.findOne({ ownerId: ADMIN_ID });
+    if (!wallet) {
+      wallet = new Wallet({
+        ownerId: ADMIN_ID,
+        balance: 0,
+        totalEarned: 0,
+        totalSpent: 0,
+        transactions: []
+      });
+      await wallet.save();
+    }
+
+    // Get all transactions
+    let transactions = [...wallet.transactions];
+
+    // Apply filters
+    if (search) {
+      const searchLower = search.toLowerCase();
+      transactions = transactions.filter(tx => 
+        tx.description?.toLowerCase().includes(searchLower) ||
+        tx.referenceId?.toLowerCase().includes(searchLower) ||
+        tx.transactionId?.toLowerCase().includes(searchLower) ||
+        tx.bookingId?.toLowerCase().includes(searchLower) ||
+        tx.reason?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (type && type !== 'all') {
+      transactions = transactions.filter(tx => tx.type === type);
+    }
+
+    if (status && status !== 'all') {
+      transactions = transactions.filter(tx => tx.status === status);
+    }
+
+    // Sort by createdAt descending
+    transactions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // Calculate totals
+    const totalCredits = wallet.transactions
+      .filter(tx => tx.type === 'credit')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+    
+    const totalDebits = wallet.transactions
+      .filter(tx => tx.type === 'debit')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    const pendingCredits = wallet.transactions
+      .filter(tx => tx.type === 'credit' && tx.status === 'pending')
+      .reduce((sum, tx) => sum + tx.amount, 0);
+
+    // Pagination
+    const total = transactions.length;
+    const paginatedTransactions = transactions.slice(skip, skip + parseInt(limit));
+
+    res.json({
+      success: true,
+      wallet: {
+        balance: wallet.balance || 0,
+        totalCredits: totalCredits,
+        totalDebits: totalDebits,
+        pendingCredits: pendingCredits,
+        totalEarned: wallet.totalEarned || 0,
+        totalSpent: wallet.totalSpent || 0,
+        totalTransactions: wallet.transactions.length
+      },
+      transactions: paginatedTransactions,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+
+  } catch (error) {
+    console.error('Admin wallet error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get admin wallet' 
+    });
+  }
+});
+
+
+// ======================
 // GET ALL WALLETS (Admin) - WITH ORGANIZATION NAME
 // ======================
 router.get('/all-wallets', async (req, res) => {
