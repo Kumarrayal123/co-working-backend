@@ -1,41 +1,30 @@
-// const mongoose = require("mongoose");
-
-// const userSchema = new mongoose.Schema({
-//     name: { type: String, required: true },
-//     email: { type: String, required: true, unique: true },
-//     password: { type: String, required: true },
-//     mobile: { type: String, required: true },
-//     address: { type: String, required: true },
-// });
-
-// module.exports = mongoose.model("User", userSchema);
-
-
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
-  name: { type: String, },
-  email: { type: String, },
-  password: { type: String, },
-  mobile: { type: String, },
-  address: { type: String, },
-  organizationName: { type: String, },
-  role: { type: String, enum: ["user", "doctor"], default: "user" },
+  name: { type: String },
+  email: { type: String, unique: true },
+  password: { type: String },
+  mobile: { type: String },
+  address: { type: String },
+  organizationName: { type: String, default: '' },
+  role: { type: String, enum: ["user", "doctor", "cabinowner", "cabinOwner"], default: "user" },
+  isDoctor: { type: Boolean, default: false },
 
-  isDoctor: {
-    type: Boolean,
-  },
+  // PAN Number field - ADD THIS
+  panNumber: { type: String, default: '' },
+
+  // GST Number
+  gstNumber: { type: String, default: '' },
+  
+  // DMHO Number (keep for doctors)
+  dmhoNumber: { type: String, default: '' },
 
   // Doctor Verification Documents
-  adharCard: { type: String, },          // file/url
-  panCard: { type: String, },            // file/url
-  mbbsCertificate: { type: String, },    // file/url
-  pmcRegistration: { type: String, },    // Permanent Medical Registration
-  nmrId: { type: String, },              // National Medical Register ID
-
-
-  gstNumber: { type: String, default: '' },
-  dmhoNumber: { type: String, default: '' },
+  adharCard: { type: String },
+  panCard: { type: String },
+  mbbsCertificate: { type: String },
+  pmcRegistration: { type: String },
+  nmrId: { type: String },
 
   // Document Verification Status
   adharCardStatus: { type: String, default: "pending" },

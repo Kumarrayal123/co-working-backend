@@ -217,7 +217,7 @@ router.post(
         role,
         organizationName,
         gstNumber,
-        dmhoNumber
+        panNumber  // ← ADD THIS
       } = req.body;
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -232,12 +232,14 @@ router.post(
         address,
         role: role || "user",
         status: isDoctor ? "pending" : "active",
-        // New fields
+        // Organization fields
         organizationName: organizationName || "",
         gstNumber: gstNumber || "",
-        dmhoNumber: dmhoNumber || ""
+        panNumber: panNumber || "",  // ← ADD THIS - STORE PAN NUMBER
+        isDoctor: isDoctor || false
       };
 
+      // Only add document fields for doctors
       if (isDoctor) {
         userData.adharCard = req.files?.adharCard?.[0]?.path.replace(/\\/g, "/") || null;
         userData.panCard = req.files?.panCard?.[0]?.path.replace(/\\/g, "/") || null;
@@ -250,6 +252,12 @@ router.post(
         userData.mbbsCertificateStatus = "pending";
         userData.pmcRegistrationStatus = "pending";
         userData.nmrIdStatus = "pending";
+      } else {
+        // For regular users, still allow PAN card upload
+        if (req.files?.panCard?.[0]) {
+          userData.panCard = req.files.panCard[0].path.replace(/\\/g, "/");
+          userData.panCardStatus = "pending";
+        }
       }
 
       const user = new User(userData);
