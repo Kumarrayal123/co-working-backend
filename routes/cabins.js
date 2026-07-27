@@ -209,9 +209,9 @@ router.get("/", async (req, res) => {
 });
 
 // ======================
-// 5. CREATE CABIN - POST (Admin + User Support)
+// 5. CREATE CABIN - POST (With auth middleware)
 // ======================
-router.post("/", upload.fields([
+router.post("/", auth, upload.fields([
   { name: 'images', maxCount: 10 },
   { name: 'videos', maxCount: 5 }
 ]), async (req, res) => {
@@ -219,55 +219,24 @@ router.post("/", upload.fields([
     console.log("═══════════════════════════════════════");
     console.log("📦 ADD CABIN REQUEST STARTED");
     console.log("═══════════════════════════════════════");
+
+    // ✅ Get user from req.user (set by auth middleware)
+    const userId = req.user?.id;
+    const userRole = req.user?.role || 'user';
     
-    const ADMIN_ID = "68ebe9ee8f06d33ee022d665";
-    console.log("🏷️ ADMIN_ID configured:", ADMIN_ID);
+    console.log("👤 Authenticated User:");
+    console.log("  - ID:", userId);
+    console.log("  - Role:", userRole);
 
-    // ─── LOG REQUEST ───
-    console.log("📋 Headers:", {
-      authorization: req.headers.authorization ? "✅ Present" : "❌ Missing"
-    });
-
-    // ─── CHECK USER ───
-    let userId = null;
-    let userRole = null;
-
-    // Try to get user from token if present
-    if (req.headers.authorization) {
-      try {
-        const token = req.headers.authorization.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
-        userId = decoded.id;
-        userRole = decoded.role;
-        console.log("👤 User from token:", { userId, userRole });
-      } catch (err) {
-        console.log("⚠️ Invalid token, continuing as admin");
-      }
+    if (!userId) {
+      console.log("❌ No user ID found in request");
+      return res.status(401).json({
+        success: false,
+        error: "Authentication required. Please login."
+      });
     }
 
-    // ─── DETERMINE OWNER ───
-    let ownerId;
-    let ownerSource;
-
-    if (userId && userRole === 'admin') {
-      // ✅ Logged in admin user
-      ownerId = userId;
-      ownerSource = "🔵 LOGGED IN ADMIN";
-      console.log("✅ Using logged in admin ID:", ownerId);
-    } else if (userId && userRole === 'user') {
-      // ✅ Logged in normal user
-      ownerId = userId;
-      ownerSource = "🟢 LOGGED IN USER";
-      console.log("✅ Using logged in user ID:", ownerId);
-    } else {
-      // ⚠️ No token or invalid - use admin fallback
-      ownerId = ADMIN_ID;
-      ownerSource = "🟡 FALLBACK (ADMIN ID)";
-      console.log("⚠️ Using ADMIN_ID as fallback:", ADMIN_ID);
-    }
-
-    console.log("🏷️ FINAL OWNER ID:", ownerId);
-    console.log("📌 SOURCE:", ownerSource);
+    console.log("✅ Using authenticated user ID:", userId);
 
     // ─── REST OF THE CODE ───
     const { 
@@ -284,15 +253,49 @@ router.post("/", upload.fields([
     const images = req.files?.images?.map((file) => file.path) || [];
     const videos = req.files?.videos?.map((file) => file.path) || [];
 
+    // ─── VALIDATE REQUIRED FIELDS ───
     if (!name || !capacity || !price || !address) {
-      return res.status(400).json({ message: "Missing required fields" });
+      console.log("❌ Missing required fields:", { name, capacity, price, address });
+      return res.status(400).json({ 
+        success: false,
+        error: "Missing required fields" 
+      });
     }
 
+    // ─── VALIDATE SEATS ───
+    if (!seats || seats.length === 0) {
+      console.log("❌ No seats provided");
+      return res.status(400).json({
+        success: false,
+        error: "At least one seat is required for the cabin"
+      });
+    }
+
+    // ─── VALIDATE SEAT COUNT MATCHES CAPACITY ───
+    const capacityNum = Number(capacity);
+    if (seats.length !== capacityNum) {
+      console.log(`❌ Seat count mismatch: ${seats.length} seats vs ${capacityNum} capacity`);
+      return res.status(400).json({
+        success: false,
+        error: `Number of seats (${seats.length}) does not match capacity (${capacityNum})`
+      });
+    }
+
+    console.log("📋 Cabin Data:");
+    console.log("   ├─ Name:", name);
+    console.log("   ├─ Address:", address);
+    console.log("   ├─ Price:", price);
+    console.log("   ├─ Capacity:", capacity);
+    console.log("   ├─ Seats:", seats.length);
+    console.log("   ├─ Type:", cabinType || 'normal');
+    console.log("   └─ Images:", images.length);
+
+    // ─── CREATE CABIN ───
     const newCabin = new Cabin({
-      owner: ownerId,
+      owner: userId,
       name,
       description: description || '',
-      capacity: Number(capacity),
+      capacity: capacityNum,
       address,
       price: Number(price),
       cabinType: cabinType || 'normal',
@@ -306,24 +309,33 @@ router.post("/", upload.fields([
       is24x7: is24x7 === 'true' || false,
       isChamber: isChamber === 'true' || false,
       isActive: true,
-      hasActiveOrder: true,
+      hasActiveOrder: false,
     });
 
     await newCabin.save();
-    console.log("✅ Cabin saved with owner:", ownerId);
+    console.log("✅ Cabin saved successfully!");
+    console.log("   ├─ Cabin ID:", newCabin._id);
+    console.log("   ├─ Owner ID:", newCabin.owner);
+    console.log("   └─ Name:", newCabin.name);
+    console.log("═════════════════════════════════════════════");
 
     res.status(201).json({
       success: true,
       message: "Cabin added successfully",
       cabin: newCabin,
       ownerInfo: {
-        ownerId: ownerId,
-        source: ownerSource
+        ownerId: userId,
+        source: "🔵 AUTHENTICATED USER",
+        role: userRole
       }
     });
 
   } catch (error) {
-    console.error("❌ ADD CABIN ERROR:", error.message);
+    console.error("❌ ADD CABIN ERROR:");
+    console.error("   ├─ Message:", error.message);
+    console.error("   └─ Stack:", error.stack);
+    console.log("═════════════════════════════════════════════");
+    
     res.status(500).json({ 
       success: false,
       error: "Failed to create cabin",
@@ -333,36 +345,36 @@ router.post("/", upload.fields([
 });
 
 // ======================
-// 6. CREATE CABIN ORDER (Admin + User Support)
+// 6. CREATE CABIN ORDER (With auth middleware)
 // ======================
-router.post('/createcabinorder', async (req, res) => {
+router.post('/createcabinorder', auth, async (req, res) => {
   try {
     const { cabinId } = req.body;
-    const ADMIN_ID = "68ebe9ee8f06d33ee022d665";
 
     console.log("═══════════════════════════════════════");
     console.log("📦 CREATE CABIN ORDER REQUEST STARTED");
     console.log("═══════════════════════════════════════");
 
-    // ─── CHECK USER ───
-    let userId = null;
-    let userRole = null;
+    // ✅ Get user from req.user (set by auth middleware)
+    const userId = req.user?.id;
+    const userRole = req.user?.role || 'user';
+    
+    console.log("👤 Authenticated User:");
+    console.log("  - ID:", userId);
+    console.log("  - Role:", userRole);
 
-    if (req.headers.authorization) {
-      try {
-        const token = req.headers.authorization.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
-        userId = decoded.id;
-        userRole = decoded.role;
-        console.log("👤 User from token:", { userId, userRole });
-      } catch (err) {
-        console.log("⚠️ Invalid token");
-      }
+    if (!userId) {
+      console.log("❌ No user ID found in request");
+      return res.status(401).json({
+        success: false,
+        error: "Authentication required. Please login."
+      });
     }
 
     // ─── FIND CABIN ───
     const cabin = await Cabin.findById(cabinId);
     if (!cabin) {
+      console.log("❌ Cabin not found:", cabinId);
       return res.status(404).json({ 
         success: false,
         error: 'Cabin not found'
@@ -379,23 +391,27 @@ router.post('/createcabinorder', async (req, res) => {
     let ownerId;
     let ownerSource;
 
-    if (userId && (userRole === 'admin' || userRole === 'user')) {
-      // ✅ Check if user owns this cabin
-      if (cabin.owner.toString() === userId.toString()) {
-        ownerId = userId;
-        ownerSource = `🔵 LOGGED IN ${userRole.toUpperCase()}`;
-        console.log("✅ User owns this cabin:", ownerId);
-      } else {
-        // User doesn't own this cabin - use admin fallback
-        ownerId = ADMIN_ID;
-        ownerSource = "🟡 FALLBACK (ADMIN ID) - User doesn't own cabin";
-        console.log("⚠️ User doesn't own cabin, using ADMIN_ID");
-      }
+    // First check if cabin has an owner
+    if (!cabin.owner) {
+      console.log("❌ Cabin has no owner!");
+      return res.status(400).json({
+        success: false,
+        error: 'Cabin has no owner assigned. Please contact admin.'
+      });
+    }
+
+    // Check if user owns this cabin
+    if (cabin.owner.toString() === userId.toString()) {
+      ownerId = userId;
+      ownerSource = `🔵 LOGGED IN USER (${userRole}) - Owns cabin`;
+      console.log("✅ User owns this cabin:", ownerId);
     } else {
-      // No token - use admin fallback
-      ownerId = ADMIN_ID;
-      ownerSource = "🟡 FALLBACK (ADMIN ID) - No token";
-      console.log("⚠️ No token, using ADMIN_ID");
+      // User doesn't own this cabin - use cabin's owner
+      ownerId = cabin.owner;
+      ownerSource = "🟡 USING CABIN'S OWNER (User doesn't own cabin)";
+      console.log("⚠️ User doesn't own cabin, using cabin's owner:", ownerId);
+      console.log("⚠️ User ID:", userId);
+      console.log("⚠️ Cabin Owner:", cabin.owner);
     }
 
     console.log("🏷️ FINAL OWNER ID:", ownerId);
@@ -409,6 +425,7 @@ router.post('/createcabinorder', async (req, res) => {
     });
 
     if (existingOrder) {
+      console.log("⚠️ Active order already exists");
       return res.status(400).json({ 
         success: false,
         error: 'Cabin already has an active order'
@@ -421,6 +438,7 @@ router.post('/createcabinorder', async (req, res) => {
     });
 
     if (pendingOrder) {
+      console.log("⚠️ Pending order exists:", pendingOrder.razorpayOrderId);
       return res.status(400).json({ 
         success: false,
         error: 'Payment already initiated. Please complete the payment.',
@@ -451,6 +469,7 @@ router.post('/createcabinorder', async (req, res) => {
     };
 
     const razorpayOrder = await razorpay.orders.create(options);
+    console.log("✅ Razorpay order created:", razorpayOrder.id);
 
     // ─── SET EXPIRY ───
     const expiryDate = new Date();
@@ -473,11 +492,23 @@ router.post('/createcabinorder', async (req, res) => {
     });
 
     await order.save();
+    console.log("✅ Order saved to database:", order._id);
 
     // ─── UPDATE CABIN ───
     await Cabin.findByIdAndUpdate(cabinId, {
       $set: { expiryDate: expiryDate }
     });
+    console.log("✅ Cabin expiry updated:", expiryDate);
+
+    console.log("─────────────────────────────────────────────");
+    console.log("📤 ORDER CREATED SUCCESSFULLY");
+    console.log("─────────────────────────────────────────────");
+    console.log("   🆔 Order ID:", order._id);
+    console.log("   👤 Owner ID:", ownerId);
+    console.log("   💰 Amount: ₹", totalAmount);
+    console.log("   📅 Expiry:", expiryDate);
+    console.log("─────────────────────────────────────────────");
+    console.log("═════════════════════════════════════════════");
 
     res.status(201).json({
       success: true,
@@ -497,6 +528,7 @@ router.post('/createcabinorder', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Create order error:', error);
+    console.error('❌ Stack:', error.stack);
     res.status(500).json({ 
       success: false,
       error: 'Failed to create cabin order: ' + error.message
@@ -505,102 +537,7 @@ router.post('/createcabinorder', async (req, res) => {
 });
 
 // ======================
-// 7. VERIFY RAZORPAY PAYMENT (Public)
-// ======================
-router.post('/verify-cabin-payment', async (req, res) => {
-  try {
-    const { 
-      razorpay_order_id, 
-      razorpay_payment_id, 
-      razorpay_signature,
-      cabinId 
-    } = req.body;
-
-    console.log('═══════════════════════════════════════');
-    console.log('🔐 VERIFY PAYMENT REQUEST STARTED');
-    console.log('═══════════════════════════════════════');
-
-    // ✅ VERIFY SIGNATURE
-    const body = razorpay_order_id + '|' + razorpay_payment_id;
-    const expectedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'RecEtdcenmR7Lm4AIEwo4KFr')
-      .update(body.toString())
-      .digest('hex');
-
-    const isAuthentic = expectedSignature === razorpay_signature;
-
-    if (!isAuthentic) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Payment verification failed - Invalid signature' 
-      });
-    }
-
-    console.log('✅ Signature verified successfully');
-
-    // ✅ FIND ORDER
-    const order = await CabinOrder.findOne({ 
-      razorpayOrderId: razorpay_order_id
-    });
-
-    if (!order) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Order not found' 
-      });
-    }
-
-    // ✅ GENERATE TRANSACTION ID
-    if (!order.transactionId) {
-      const timestamp = Date.now().toString().slice(-6);
-      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-      order.transactionId = `TXN${timestamp}${random}`;
-    }
-
-    // ✅ UPDATE ORDER STATUS
-    order.paymentStatus = 'completed';
-    order.razorpayPaymentId = razorpay_payment_id;
-    order.razorpaySignature = razorpay_signature;
-    order.paidAt = new Date();
-    await order.save();
-
-    // ✅ UPDATE CABIN
-    const cabin = await Cabin.findById(order.cabin);
-    if (cabin) {
-      cabin.isActive = true;
-      cabin.hasActiveOrder = true;
-      cabin.currentOrder = order._id;
-      cabin.expiryDate = order.expiryDate;
-      await cabin.save();
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Payment verified successfully',
-      transactionId: order.transactionId,
-      order: {
-        id: order._id,
-        baseAmount: order.baseAmount,
-        gstAmount: order.gstAmount,
-        amount: order.amount,
-        gstRate: order.gstRate,
-        transactionId: order.transactionId,
-        expiryDate: order.expiryDate
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Verify payment error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Failed to verify payment: ' + error.message 
-    });
-  }
-});
-
-
-// ======================
-// 7. VERIFY RAZORPAY PAYMENT (PUBLIC - NO AUTH)
+// 7. VERIFY RAZORPAY PAYMENT (Public - No auth needed)
 // ======================
 router.post('/verify-cabin-payment', async (req, res) => {
   try {
@@ -617,7 +554,7 @@ router.post('/verify-cabin-payment', async (req, res) => {
     console.log('📋 Payment Details:');
     console.log('   ├─ Order ID:', razorpay_order_id);
     console.log('   ├─ Payment ID:', razorpay_payment_id);
-    console.log('   └─ Cabin ID:', cabinId);
+    console.log('   └─ Cabin ID:', cabinId || 'Not provided');
 
     // ✅ VERIFY SIGNATURE
     const body = razorpay_order_id + '|' + razorpay_payment_id;
@@ -657,6 +594,12 @@ router.post('/verify-cabin-payment', async (req, res) => {
       });
     }
 
+    console.log('📋 Order Details:');
+    console.log('   ├─ Cabin ID:', order.cabin);
+    console.log('   ├─ Owner ID:', order.owner);
+    console.log('   ├─ Amount:', order.amount);
+    console.log('   └─ Status:', order.paymentStatus);
+
     // ✅ GENERATE TRANSACTION ID
     if (!order.transactionId) {
       const timestamp = Date.now().toString().slice(-6);
@@ -685,6 +628,8 @@ router.post('/verify-cabin-payment', async (req, res) => {
       console.log('   ├─ isActive:', cabin.isActive);
       console.log('   ├─ hasActiveOrder:', cabin.hasActiveOrder);
       console.log('   └─ Expiry Date:', cabin.expiryDate);
+    } else {
+      console.log('⚠️ Cabin not found for update:', order.cabin);
     }
 
     console.log('─────────────────────────────────────────────');
@@ -728,6 +673,8 @@ router.post('/verify-cabin-payment', async (req, res) => {
     });
   }
 });
+
+
 // ======================
 // 8. RENEW PAYMENT
 // ======================

@@ -303,8 +303,9 @@ router.post("/login", async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "User not found" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+    // ❌ PASSWORD VERIFICATION REMOVED - Sirf email check
+    // const isMatch = await bcrypt.compare(password, user.password);
+    // if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
 
     // If isDoctor is sent from frontend and user is a doctor, update the database
     if (isDoctor === true) {

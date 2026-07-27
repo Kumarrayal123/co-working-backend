@@ -933,6 +933,7 @@ router.get("/", async (req, res) => {
           cabinType: bookingObj.cabinId.cabinType || 'normal',
           images: bookingObj.cabinId.images || [],
           isActive: bookingObj.cabinId.isActive || false,
+          isChamber: bookingObj.cabinId.isChamber || false,
           seats: bookingObj.cabinId.seats || [],
           owner: bookingObj.cabinId.owner ? {
             _id: bookingObj.cabinId.owner._id,
