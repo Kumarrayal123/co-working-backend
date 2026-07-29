@@ -187,8 +187,300 @@ router.get("/owner-bookings", auth, async (req, res) => {
   }
 });
 
+// // ======================
+// // CREATE BOOKING
+// // ======================
+// router.post("/createbooking/:userId", async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+//     const {
+//       cabinId,
+//       name,
+//       mobile,
+//       email,
+//       startDate,
+//       startTime,
+//       endDate,
+//       endTime,
+//       bookingBasis = "hourly",
+//       selectedPlan,
+//       selectedSeats = [],      // ✅ Array of seat IDs (optional)
+//       extraCharge = 0,          // ✅ Total extra charge (optional)
+//       seatCount = 0,            // ✅ Number of seats selected (optional)
+//       paymentMethod = "online",
+//       subtotal,
+//       gstAmount,
+//       totalAmount,
+//       termsAccepted
+//     } = req.body;
+
+//     // Validate terms accepted
+//     if (!termsAccepted) {
+//       return res.status(400).json({ 
+//         error: "Terms & Conditions must be accepted to proceed with booking" 
+//       });
+//     }
+
+//     const cabin = await Cabin.findById(cabinId);
+//     if (!cabin) {
+//       return res.status(404).json({ error: "Cabin not found" });
+//     }
+
+//     const ownerId = cabin.owner;
+
+//     // ✅ SEATS ARE OPTIONAL - Only validate if seats are selected
+//     if (selectedSeats && selectedSeats.length > 0) {
+//       // Check if selected seats exist in cabin
+//       const cabinSeatIds = cabin.seats.map(s => s._id.toString());
+//       const invalidSeats = selectedSeats.filter(id => !cabinSeatIds.includes(id));
+//       if (invalidSeats.length > 0) {
+//         return res.status(400).json({ 
+//           error: `Invalid seats selected: ${invalidSeats.join(', ')}` 
+//         });
+//       }
+
+//       // Check if selected seats exceed cabin capacity
+//       if (selectedSeats.length > cabin.seats.length) {
+//         return res.status(400).json({ 
+//           error: `Cannot select more than ${cabin.seats.length} seats` 
+//         });
+//       }
+//     }
+
+//     let calculatedTotalHours = 0;
+//     let calculatedSubtotal = 0;
+//     let calculatedGstAmount = 0;
+//     let calculatedTotalPrice = 0;
+//     let computedEndDate = endDate;
+//     let computedEndTime = endTime;
+
+//     const GST_RATE = 0.18;
+
+//     if (bookingBasis === "plan") {
+//       if (!selectedPlan || !selectedPlan.cost) {
+//         return res.status(400).json({ error: "Selected plan details are required" });
+//       }
+//       calculatedTotalHours = Number(selectedPlan.hours) || 0;
+//       calculatedSubtotal = Number(selectedPlan.cost) || 0;
+//       calculatedGstAmount = calculatedSubtotal * GST_RATE;
+//       calculatedTotalPrice = calculatedSubtotal + calculatedGstAmount;
+
+//       const startDateTime = new Date(`${startDate}T${startTime}`);
+//       const validityDays = Number(selectedPlan.validity) || 30;
+//       const endDateTime = new Date(startDateTime.getTime() + validityDays * 24 * 60 * 60 * 1000);
+      
+//       computedEndDate = endDateTime.toISOString().split("T")[0];
+//       computedEndTime = startTime;
+//     } else {
+//       const newStart = new Date(`${startDate}T${startTime}`);
+//       const newEnd = new Date(`${endDate}T${endTime}`);
+
+//       if (newEnd <= newStart) {
+//         return res.status(400).json({ error: "Invalid date/time" });
+//       }
+
+//       // Check for existing bookings (exclude plan bookings and cancelled/completed)
+//       const existingBookings = await Booking.find({ 
+//         cabinId,
+//         bookingBasis: { $ne: "plan" },
+//         status: { $nin: ['cancelled', 'completed'] }
+//       });
+
+//       // Check for overlapping time slots
+//       for (let booking of existingBookings) {
+//         const bookedStart = new Date(`${booking.startDate}T${booking.startTime}`);
+//         const bookedEnd = new Date(`${booking.endDate}T${booking.endTime}`);
+
+//         if (newStart < bookedEnd && newEnd > bookedStart) {
+//           return res.status(400).json({
+//             error: "Cabin already booked for this time slot"
+//           });
+//         }
+//       }
+
+//       const diffMs = newEnd - newStart;
+//       calculatedTotalHours = Math.ceil(diffMs / (1000 * 60 * 60));
+//       calculatedSubtotal = calculatedTotalHours * (cabin.price || 0);
+      
+//       // ✅ ADD EXTRA CHARGE FOR SEATS (if any)
+//       const totalWithSeats = calculatedSubtotal + extraCharge;
+//       calculatedGstAmount = totalWithSeats * GST_RATE;
+//       calculatedTotalPrice = totalWithSeats + calculatedGstAmount;
+//     }
+
+//     let finalTotalPrice = 0;
+//     let finalSubtotal = 0;
+//     let finalGstAmount = 0;
+
+//     if (totalAmount && totalAmount > 0) {
+//       finalTotalPrice = Number(totalAmount);
+//       finalSubtotal = Number(subtotal) || calculatedSubtotal;
+//       finalGstAmount = Number(gstAmount) || calculatedGstAmount;
+//     } else {
+//       finalSubtotal = calculatedSubtotal;
+//       finalGstAmount = calculatedGstAmount;
+//       finalTotalPrice = calculatedTotalPrice;
+//     }
+
+//     console.log("===== BOOKING DEBUG =====");
+//     console.log("Terms Accepted:", termsAccepted);
+//     console.log("Selected Seats:", selectedSeats);
+//     console.log("Seat Count:", seatCount);
+//     console.log("Extra Charge:", extraCharge);
+//     console.log("Subtotal:", finalSubtotal);
+//     console.log("GST:", finalGstAmount);
+//     console.log("Total Price:", finalTotalPrice);
+//     console.log("=========================");
+
+//     let razorpayOrder = null;
+//     if (paymentMethod === 'online') {
+//       const amountInPaise = Math.round(parseFloat(finalTotalPrice) * 100);
+      
+//       if (amountInPaise <= 0) {
+//         return res.status(400).json({ error: "Invalid amount for payment" });
+//       }
+
+//       razorpayOrder = await razorpay.orders.create({
+//         amount: amountInPaise,
+//         currency: 'INR',
+//         receipt: `booking_${Date.now()}`,
+//         notes: {
+//           cabinId: cabinId,
+//           userId: userId,
+//           subtotal: String(finalSubtotal),
+//           gstAmount: String(finalGstAmount),
+//           totalAmount: String(finalTotalPrice),
+//           extraCharge: String(extraCharge),
+//           seatCount: String(seatCount),
+//           termsAccepted: String(termsAccepted)
+//         }
+//       });
+
+//       console.log("Razorpay Order Created:", {
+//         id: razorpayOrder.id,
+//         amount: razorpayOrder.amount,
+//         amountInRupees: razorpayOrder.amount / 100
+//       });
+//     }
+
+//     // ✅ Get seat details for response (if any seats selected)
+//     let selectedSeatDetails = [];
+//     if (selectedSeats && selectedSeats.length > 0) {
+//       selectedSeatDetails = cabin.seats.filter(s => 
+//         selectedSeats.includes(s._id.toString())
+//       );
+//     }
+
+//     const bookingData = {
+//       cabinId,
+//       userId,
+//       ownerId: ownerId,
+//       name,
+//       mobile,
+//       email,
+//       startDate,
+//       startTime,
+//       endDate: computedEndDate,
+//       endTime: computedEndTime,
+//       totalHours: calculatedTotalHours,
+//       subtotal: finalSubtotal,
+//       gstAmount: finalGstAmount,
+//       totalPrice: finalTotalPrice,
+//       gstRate: GST_RATE,
+//       bookingBasis,
+//       selectedPlan,
+      
+//       // ✅ SEAT FIELDS (optional)
+//       selectedSeats: selectedSeats || [],
+//       extraCharge: extraCharge || 0,
+//       seatCount: seatCount || 0,
+//       seatExtraChargePerSeat: 100,
+      
+//       paymentMethod: paymentMethod,
+//       remainingHours: calculatedTotalHours,
+//       hoursUsed: 0,
+//       isPaidToOwner: false,
+//       termsAccepted: termsAccepted
+//     };
+
+//     if (paymentMethod === 'cash') {
+//       bookingData.status = 'confirmed';
+//       bookingData.paymentStatus = 'pending';
+//       bookingData.transactionId = `CASH_${Date.now()}`;
+//     } else {
+//       bookingData.status = 'pending';
+//       bookingData.paymentStatus = 'pending';
+//       bookingData.razorpayOrderId = razorpayOrder.id;
+//       bookingData.transactionId = razorpayOrder.id;
+//     }
+
+//     const booking = new Booking(bookingData);
+//     await booking.save();
+
+//     if (paymentMethod === 'cash') {
+//       res.status(201).json({
+//         success: true,
+//         message: `Booking confirmed! Total: ₹${finalTotalPrice.toFixed(2)} (incl. GST ₹${finalGstAmount.toFixed(2)})`,
+//         booking: {
+//           id: booking._id,
+//           cabinName: cabin.name,
+//           subtotal: booking.subtotal,
+//           gstAmount: booking.gstAmount,
+//           totalPrice: booking.totalPrice,
+//           totalHours: booking.totalHours,
+//           remainingHours: booking.remainingHours,
+//           status: booking.status,
+//           paymentMethod: booking.paymentMethod,
+//           paymentStatus: booking.paymentStatus,
+//           gstRate: booking.gstRate,
+//           termsAccepted: booking.termsAccepted,
+//           // ✅ SEAT INFO
+//           selectedSeats: selectedSeatDetails,
+//           seatCount: booking.seatCount,
+//           extraCharge: booking.extraCharge
+//         }
+//       });
+//     } else {
+//       res.status(201).json({
+//         success: true,
+//         message: "Booking created. Please complete payment.",
+//         booking: {
+//           id: booking._id,
+//           cabinName: cabin.name,
+//           subtotal: booking.subtotal,
+//           gstAmount: booking.gstAmount,
+//           totalPrice: booking.totalPrice,
+//           totalHours: booking.totalHours,
+//           remainingHours: booking.remainingHours,
+//           status: booking.status,
+//           paymentMethod: booking.paymentMethod,
+//           paymentStatus: booking.paymentStatus,
+//           gstRate: booking.gstRate,
+//           termsAccepted: booking.termsAccepted,
+//           // ✅ SEAT INFO
+//           selectedSeats: selectedSeatDetails,
+//           seatCount: booking.seatCount,
+//           extraCharge: booking.extraCharge
+//         },
+//         razorpay: {
+//           orderId: razorpayOrder.id,
+//           amount: razorpayOrder.amount,
+//           amountInRupees: (razorpayOrder.amount / 100).toFixed(2),
+//           currency: razorpayOrder.currency,
+//           key: 'rzp_test_BxtRNvflG06PTV'
+//         }
+//       });
+//     }
+
+//   } catch (err) {
+//     console.error("Booking creation error:", err);
+//     res.status(500).json({ error: "Booking failed", details: err.message });
+//   }
+// });
+
+
 // ======================
-// CREATE BOOKING
+// CREATE BOOKING - WITH MULTI-DAY SLOTS SUPPORT
 // ======================
 router.post("/createbooking/:userId", async (req, res) => {
   try {
@@ -204,14 +496,18 @@ router.post("/createbooking/:userId", async (req, res) => {
       endTime,
       bookingBasis = "hourly",
       selectedPlan,
-      selectedSeats = [],      // ✅ Array of seat IDs (optional)
-      extraCharge = 0,          // ✅ Total extra charge (optional)
-      seatCount = 0,            // ✅ Number of seats selected (optional)
+      selectedSeats = [],
+      extraCharge = 0,
+      seatCount = 0,
       paymentMethod = "online",
       subtotal,
       gstAmount,
       totalAmount,
-      termsAccepted
+      termsAccepted,
+      // ✅ NEW: Multi-day slots data
+      bookingSlots = [],
+      totalDays = 0,
+      dailyHours = []
     } = req.body;
 
     // Validate terms accepted
@@ -230,7 +526,6 @@ router.post("/createbooking/:userId", async (req, res) => {
 
     // ✅ SEATS ARE OPTIONAL - Only validate if seats are selected
     if (selectedSeats && selectedSeats.length > 0) {
-      // Check if selected seats exist in cabin
       const cabinSeatIds = cabin.seats.map(s => s._id.toString());
       const invalidSeats = selectedSeats.filter(id => !cabinSeatIds.includes(id));
       if (invalidSeats.length > 0) {
@@ -239,7 +534,6 @@ router.post("/createbooking/:userId", async (req, res) => {
         });
       }
 
-      // Check if selected seats exceed cabin capacity
       if (selectedSeats.length > cabin.seats.length) {
         return res.status(400).json({ 
           error: `Cannot select more than ${cabin.seats.length} seats` 
@@ -253,6 +547,9 @@ router.post("/createbooking/:userId", async (req, res) => {
     let calculatedTotalPrice = 0;
     let computedEndDate = endDate;
     let computedEndTime = endTime;
+    let computedBookingSlots = bookingSlots;
+    let computedTotalDays = totalDays;
+    let computedDailyHours = dailyHours;
 
     const GST_RATE = 0.18;
 
@@ -260,54 +557,119 @@ router.post("/createbooking/:userId", async (req, res) => {
       if (!selectedPlan || !selectedPlan.cost) {
         return res.status(400).json({ error: "Selected plan details are required" });
       }
+      
       calculatedTotalHours = Number(selectedPlan.hours) || 0;
       calculatedSubtotal = Number(selectedPlan.cost) || 0;
-      calculatedGstAmount = calculatedSubtotal * GST_RATE;
-      calculatedTotalPrice = calculatedSubtotal + calculatedGstAmount;
-
-      const startDateTime = new Date(`${startDate}T${startTime}`);
-      const validityDays = Number(selectedPlan.validity) || 30;
-      const endDateTime = new Date(startDateTime.getTime() + validityDays * 24 * 60 * 60 * 1000);
       
-      computedEndDate = endDateTime.toISOString().split("T")[0];
-      computedEndTime = startTime;
+      // ✅ If plan, generate slots for validity period
+      if (bookingSlots.length === 0 && startDate && startTime) {
+        const startDateTime = new Date(`${startDate}T${startTime}`);
+        const validityDays = Number(selectedPlan.validity) || 30;
+        const endDateTime = new Date(startDateTime.getTime() + validityDays * 24 * 60 * 60 * 1000);
+        
+        computedEndDate = endDateTime.toISOString().split("T")[0];
+        computedEndTime = startTime;
+        
+        // Generate slots for plan validity
+        computedBookingSlots = generateDailySlots(startDate, computedEndDate, startTime, startTime);
+        computedTotalDays = computedBookingSlots.length;
+        computedDailyHours = computedBookingSlots.map(slot => slot.hours);
+        calculatedTotalHours = computedBookingSlots.reduce((total, slot) => total + slot.hours, 0);
+      }
+      
+      // Add extra charge for seats
+      const totalWithSeats = calculatedSubtotal + extraCharge;
+      calculatedGstAmount = totalWithSeats * GST_RATE;
+      calculatedTotalPrice = totalWithSeats + calculatedGstAmount;
+      
     } else {
+      // HOURLY BOOKING
       const newStart = new Date(`${startDate}T${startTime}`);
       const newEnd = new Date(`${endDate}T${endTime}`);
 
       if (newEnd <= newStart) {
-        return res.status(400).json({ error: "Invalid date/time" });
+        return res.status(400).json({ error: "Invalid date/time - End must be after Start" });
       }
 
-      // Check for existing bookings (exclude plan bookings and cancelled/completed)
+      // ✅ Check for overlapping bookings for each day
+      // Get all existing bookings for this cabin
       const existingBookings = await Booking.find({ 
         cabinId,
         bookingBasis: { $ne: "plan" },
         status: { $nin: ['cancelled', 'completed'] }
       });
 
-      // Check for overlapping time slots
-      for (let booking of existingBookings) {
-        const bookedStart = new Date(`${booking.startDate}T${booking.startTime}`);
-        const bookedEnd = new Date(`${booking.endDate}T${booking.endTime}`);
-
-        if (newStart < bookedEnd && newEnd > bookedStart) {
-          return res.status(400).json({
-            error: "Cabin already booked for this time slot"
-          });
+      // ✅ Check overlap for each day slot
+      if (bookingSlots.length > 0) {
+        // Use the slots from frontend
+        computedBookingSlots = bookingSlots;
+        computedTotalDays = bookingSlots.length;
+        computedDailyHours = bookingSlots.map(slot => slot.hours);
+        calculatedTotalHours = bookingSlots.reduce((total, slot) => total + slot.hours, 0);
+        
+        // Check each slot for conflicts
+        for (let slot of bookingSlots) {
+          const slotDate = new Date(`${slot.date}T${slot.startTime}`);
+          const slotEndTime = new Date(`${slot.date}T${slot.endTime}`);
+          
+          // If end time is before start time, add 1 day
+          if (slotEndTime <= slotDate) {
+            slotEndTime.setDate(slotEndTime.getDate() + 1);
+          }
+          
+          // Check against existing bookings
+          for (let booking of existingBookings) {
+            const bookedStart = new Date(`${booking.startDate}T${booking.startTime}`);
+            const bookedEnd = new Date(`${booking.endDate}T${booking.endTime}`);
+            
+            // Check if this slot overlaps with existing booking
+            if (slotDate < bookedEnd && slotEndTime > bookedStart) {
+              // Check if it's the same day or overlapping days
+              const slotDateStr = slotDate.toISOString().split('T')[0];
+              const bookedStartStr = bookedStart.toISOString().split('T')[0];
+              const bookedEndStr = bookedEnd.toISOString().split('T')[0];
+              
+              // If dates overlap
+              if (slotDateStr >= bookedStartStr && slotDateStr <= bookedEndStr) {
+                return res.status(400).json({
+                  error: `Cabin already booked for ${slot.date} at ${slot.startTime} - ${slot.endTime}`
+                });
+              }
+            }
+          }
         }
+        
+        // Calculate subtotal based on total hours
+        calculatedSubtotal = calculatedTotalHours * (cabin.price || 0);
+        
+      } else {
+        // Fallback: Calculate hours from date range (legacy support)
+        const diffMs = newEnd - newStart;
+        calculatedTotalHours = Math.ceil(diffMs / (1000 * 60 * 60));
+        calculatedSubtotal = calculatedTotalHours * (cabin.price || 0);
+        
+        // Generate slots for the date range
+        computedBookingSlots = generateDailySlots(startDate, endDate, startTime, endTime);
+        computedTotalDays = computedBookingSlots.length;
+        computedDailyHours = computedBookingSlots.map(slot => slot.hours);
       }
-
-      const diffMs = newEnd - newStart;
-      calculatedTotalHours = Math.ceil(diffMs / (1000 * 60 * 60));
-      calculatedSubtotal = calculatedTotalHours * (cabin.price || 0);
       
-      // ✅ ADD EXTRA CHARGE FOR SEATS (if any)
+      // Check if total hours from slots matches calculated total hours
+      const slotTotalHours = computedBookingSlots.reduce((total, slot) => total + slot.hours, 0);
+      if (slotTotalHours !== calculatedTotalHours) {
+        console.log(`Warning: Slot total hours (${slotTotalHours}) vs calculated total hours (${calculatedTotalHours})`);
+        // Use the slot total hours for accuracy
+        calculatedTotalHours = slotTotalHours;
+        calculatedSubtotal = calculatedTotalHours * (cabin.price || 0);
+      }
+      
+      // ✅ ADD EXTRA CHARGE FOR SEATS
       const totalWithSeats = calculatedSubtotal + extraCharge;
       calculatedGstAmount = totalWithSeats * GST_RATE;
       calculatedTotalPrice = totalWithSeats + calculatedGstAmount;
     }
 
+    // Use provided values or calculated values
     let finalTotalPrice = 0;
     let finalSubtotal = 0;
     let finalGstAmount = 0;
@@ -327,11 +689,16 @@ router.post("/createbooking/:userId", async (req, res) => {
     console.log("Selected Seats:", selectedSeats);
     console.log("Seat Count:", seatCount);
     console.log("Extra Charge:", extraCharge);
+    console.log("Total Days:", computedTotalDays);
+    console.log("Daily Hours:", computedDailyHours);
+    console.log("Total Hours:", calculatedTotalHours);
+    console.log("Booking Slots:", computedBookingSlots.length);
     console.log("Subtotal:", finalSubtotal);
     console.log("GST:", finalGstAmount);
     console.log("Total Price:", finalTotalPrice);
     console.log("=========================");
 
+    // Create Razorpay Order for online payments
     let razorpayOrder = null;
     if (paymentMethod === 'online') {
       const amountInPaise = Math.round(parseFloat(finalTotalPrice) * 100);
@@ -352,6 +719,8 @@ router.post("/createbooking/:userId", async (req, res) => {
           totalAmount: String(finalTotalPrice),
           extraCharge: String(extraCharge),
           seatCount: String(seatCount),
+          totalDays: String(computedTotalDays),
+          totalHours: String(calculatedTotalHours),
           termsAccepted: String(termsAccepted)
         }
       });
@@ -363,7 +732,7 @@ router.post("/createbooking/:userId", async (req, res) => {
       });
     }
 
-    // ✅ Get seat details for response (if any seats selected)
+    // Get seat details for response
     let selectedSeatDetails = [];
     if (selectedSeats && selectedSeats.length > 0) {
       selectedSeatDetails = cabin.seats.filter(s => 
@@ -371,6 +740,7 @@ router.post("/createbooking/:userId", async (req, res) => {
       );
     }
 
+    // ✅ Prepare booking data with multi-day slots
     const bookingData = {
       cabinId,
       userId,
@@ -396,6 +766,11 @@ router.post("/createbooking/:userId", async (req, res) => {
       seatCount: seatCount || 0,
       seatExtraChargePerSeat: 100,
       
+      // ✅ MULTI-DAY SLOTS
+      bookingSlots: computedBookingSlots,
+      totalDays: computedTotalDays,
+      dailyHours: computedDailyHours,
+      
       paymentMethod: paymentMethod,
       remainingHours: calculatedTotalHours,
       hoursUsed: 0,
@@ -417,66 +792,97 @@ router.post("/createbooking/:userId", async (req, res) => {
     const booking = new Booking(bookingData);
     await booking.save();
 
-    if (paymentMethod === 'cash') {
-      res.status(201).json({
-        success: true,
-        message: `Booking confirmed! Total: ₹${finalTotalPrice.toFixed(2)} (incl. GST ₹${finalGstAmount.toFixed(2)})`,
-        booking: {
-          id: booking._id,
-          cabinName: cabin.name,
-          subtotal: booking.subtotal,
-          gstAmount: booking.gstAmount,
-          totalPrice: booking.totalPrice,
-          totalHours: booking.totalHours,
-          remainingHours: booking.remainingHours,
-          status: booking.status,
-          paymentMethod: booking.paymentMethod,
-          paymentStatus: booking.paymentStatus,
-          gstRate: booking.gstRate,
-          termsAccepted: booking.termsAccepted,
-          // ✅ SEAT INFO
-          selectedSeats: selectedSeatDetails,
-          seatCount: booking.seatCount,
-          extraCharge: booking.extraCharge
-        }
-      });
-    } else {
-      res.status(201).json({
-        success: true,
-        message: "Booking created. Please complete payment.",
-        booking: {
-          id: booking._id,
-          cabinName: cabin.name,
-          subtotal: booking.subtotal,
-          gstAmount: booking.gstAmount,
-          totalPrice: booking.totalPrice,
-          totalHours: booking.totalHours,
-          remainingHours: booking.remainingHours,
-          status: booking.status,
-          paymentMethod: booking.paymentMethod,
-          paymentStatus: booking.paymentStatus,
-          gstRate: booking.gstRate,
-          termsAccepted: booking.termsAccepted,
-          // ✅ SEAT INFO
-          selectedSeats: selectedSeatDetails,
-          seatCount: booking.seatCount,
-          extraCharge: booking.extraCharge
-        },
-        razorpay: {
-          orderId: razorpayOrder.id,
-          amount: razorpayOrder.amount,
-          amountInRupees: (razorpayOrder.amount / 100).toFixed(2),
-          currency: razorpayOrder.currency,
-          key: 'rzp_test_BxtRNvflG06PTV'
-        }
-      });
+    // ✅ Response with all booking details
+    const responseData = {
+      success: true,
+      message: paymentMethod === 'cash' 
+        ? `Booking confirmed! Total: ₹${finalTotalPrice.toFixed(2)} (incl. GST ₹${finalGstAmount.toFixed(2)})`
+        : "Booking created. Please complete payment.",
+      booking: {
+        id: booking._id,
+        cabinName: cabin.name,
+        subtotal: booking.subtotal,
+        gstAmount: booking.gstAmount,
+        totalPrice: booking.totalPrice,
+        totalHours: booking.totalHours,
+        remainingHours: booking.remainingHours,
+        status: booking.status,
+        paymentMethod: booking.paymentMethod,
+        paymentStatus: booking.paymentStatus,
+        gstRate: booking.gstRate,
+        termsAccepted: booking.termsAccepted,
+        
+        // ✅ SEAT INFO
+        selectedSeats: selectedSeatDetails,
+        seatCount: booking.seatCount,
+        extraCharge: booking.extraCharge,
+        
+        // ✅ MULTI-DAY SLOTS INFO
+        bookingSlots: booking.bookingSlots,
+        totalDays: booking.totalDays,
+        dailyHours: booking.dailyHours
+      }
+    };
+
+    // Add Razorpay details for online payments
+    if (paymentMethod === 'online' && razorpayOrder) {
+      responseData.razorpay = {
+        orderId: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        amountInRupees: (razorpayOrder.amount / 100).toFixed(2),
+        currency: razorpayOrder.currency,
+        key: 'rzp_test_BxtRNvflG06PTV'
+      };
     }
+
+    res.status(201).json(responseData);
 
   } catch (err) {
     console.error("Booking creation error:", err);
     res.status(500).json({ error: "Booking failed", details: err.message });
   }
 });
+
+// ======================
+// HELPER: Generate Daily Slots
+// ======================
+function generateDailySlots(startDate, endDate, startTime, endTime) {
+  const slots = [];
+  const current = new Date(startDate);
+  const end = new Date(endDate);
+  
+  // Reset time to start of day for comparison
+  current.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  
+  while (current <= end) {
+    const dateStr = current.toISOString().split('T')[0];
+    
+    // Calculate hours for this day
+    const start = new Date(`2000-01-01T${startTime}`);
+    const endTimeObj = new Date(`2000-01-01T${endTime}`);
+    
+    // If end time is before start time, assume it's next day
+    if (endTimeObj <= start) {
+      endTimeObj.setDate(endTimeObj.getDate() + 1);
+    }
+    
+    const hours = Math.ceil((endTimeObj - start) / (1000 * 60 * 60));
+    
+    slots.push({
+      date: dateStr,
+      startTime: startTime,
+      endTime: endTime,
+      hours: hours
+    });
+    
+    current.setDate(current.getDate() + 1);
+  }
+  
+  return slots;
+}
+
+
 // ======================
 // VERIFY PAYMENT - WITH WALLET UPDATE
 // ======================
@@ -876,7 +1282,7 @@ router.post("/createvisit/:userId", async (req, res) => {
 // routes/bookings.js
 
 // ======================
-// 3. GET ALL BOOKINGS (ADMIN)
+// 3. GET ALL BOOKINGS (ADMIN) - WITH ALL FIELDS
 // ======================
 router.get("/", async (req, res) => {
   try {
@@ -886,28 +1292,23 @@ router.get("/", async (req, res) => {
         populate: {
           path: "owner",
           model: "User",
-          select: "name email mobile address organizationName gstNumber"
+          select: "name email mobile address organizationName gstNumber profileImage"
         }
       })
-      .populate("userId", "name mobile email")
+      .populate("userId", "name mobile email profileImage")
       .sort({ createdAt: -1 });
 
-    // ✅ Format bookings with populated seat details
+    // ✅ Format bookings with ALL populated details
     const formattedBookings = bookings.map(booking => {
       const bookingObj = booking.toObject();
       
       // ✅ POPULATE SELECTED SEATS WITH FULL DETAILS
       let populatedSelectedSeats = [];
       
-      // Check if selectedSeats exist and is an array
       if (bookingObj.selectedSeats && Array.isArray(bookingObj.selectedSeats) && bookingObj.selectedSeats.length > 0) {
-        // Check if cabin exists and has seats
         if (bookingObj.cabinId && bookingObj.cabinId.seats && Array.isArray(bookingObj.cabinId.seats)) {
-          
-          // Convert selected seat IDs to strings for comparison
           const selectedIds = bookingObj.selectedSeats.map(id => id.toString());
           
-          // Filter cabin seats that match selected IDs
           populatedSelectedSeats = bookingObj.cabinId.seats
             .filter(seat => {
               const seatId = seat._id ? seat._id.toString() : seat.toString();
@@ -916,14 +1317,34 @@ router.get("/", async (req, res) => {
             .map(seat => ({
               _id: seat._id || seat,
               name: seat.name || 'Unknown Seat',
-              number: seat.number || 0
+              number: seat.number || 0,
+              type: seat.type || 'standard',
+              isActive: seat.isActive !== undefined ? seat.isActive : true
             }));
         }
       }
 
-      // ✅ Return clean data with populated seats
+      // ✅ Format booking slots
+      let formattedSlots = [];
+      if (bookingObj.bookingSlots && Array.isArray(bookingObj.bookingSlots)) {
+        formattedSlots = bookingObj.bookingSlots.map(slot => ({
+          date: slot.date || '',
+          startTime: slot.startTime || '',
+          endTime: slot.endTime || '',
+          hours: slot.hours || 0
+        }));
+      }
+
+      // ✅ Return COMPLETE data with ALL fields
       return {
+        // ✅ BASIC INFO
         _id: bookingObj._id,
+        bookingType: bookingObj.bookingType || 'booking',
+        bookingBasis: bookingObj.bookingBasis || 'hourly',
+        bookingCode: bookingObj.bookingCode || null,
+        qrCode: bookingObj.qrCode || null,
+        
+        // ✅ CABIN DETAILS
         cabin: bookingObj.cabinId ? {
           _id: bookingObj.cabinId._id,
           name: bookingObj.cabinId.name || 'N/A',
@@ -934,6 +1355,13 @@ router.get("/", async (req, res) => {
           images: bookingObj.cabinId.images || [],
           isActive: bookingObj.cabinId.isActive || false,
           isChamber: bookingObj.cabinId.isChamber || false,
+          amenities: bookingObj.cabinId.amenities || {},
+          description: bookingObj.cabinId.description || '',
+          location: bookingObj.cabinId.location || {
+            lat: 0,
+            lng: 0,
+            address: ''
+          },
           seats: bookingObj.cabinId.seats || [],
           owner: bookingObj.cabinId.owner ? {
             _id: bookingObj.cabinId.owner._id,
@@ -942,45 +1370,78 @@ router.get("/", async (req, res) => {
             mobile: bookingObj.cabinId.owner.mobile,
             address: bookingObj.cabinId.owner.address,
             organizationName: bookingObj.cabinId.owner.organizationName || '',
-            gstNumber: bookingObj.cabinId.owner.gstNumber || ''
+            gstNumber: bookingObj.cabinId.owner.gstNumber || '',
+            profileImage: bookingObj.cabinId.owner.profileImage || ''
           } : null
         } : null,
+        
+        // ✅ USER DETAILS
         user: bookingObj.userId ? {
           _id: bookingObj.userId._id,
           name: bookingObj.userId.name || 'N/A',
           email: bookingObj.userId.email || 'N/A',
-          mobile: bookingObj.userId.mobile || 'N/A'
+          mobile: bookingObj.userId.mobile || 'N/A',
+          profileImage: bookingObj.userId.profileImage || ''
         } : null,
+        userId: bookingObj.userId?._id || bookingObj.userId || null,
+        name: bookingObj.name || '',
+        mobile: bookingObj.mobile || '',
+        email: bookingObj.email || '',
+        ownerId: bookingObj.ownerId || null,
+        
+        // ✅ DATE & TIME
         startDate: bookingObj.startDate,
         startTime: bookingObj.startTime,
         endDate: bookingObj.endDate,
         endTime: bookingObj.endTime,
+        
+        // ✅ HOURS
         totalHours: bookingObj.totalHours || 0,
         remainingHours: bookingObj.remainingHours || 0,
         hoursUsed: bookingObj.hoursUsed || 0,
+        
+        // ✅ MULTI-DAY SLOTS
+        bookingSlots: formattedSlots,
+        totalDays: bookingObj.totalDays || 0,
+        dailyHours: bookingObj.dailyHours || [],
+        
+        // ✅ PRICING
         subtotal: bookingObj.subtotal || 0,
         gstAmount: bookingObj.gstAmount || 0,
         gstRate: bookingObj.gstRate || 0.18,
         totalPrice: bookingObj.totalPrice || 0,
-        // ✅ SEAT DETAILS - POPULATED
+        amountPaid: bookingObj.amountPaid || 0,
+        
+        // ✅ SEAT DETAILS
         selectedSeats: populatedSelectedSeats,
         selectedSeatIds: bookingObj.selectedSeats || [],
         seatCount: bookingObj.seatCount || 0,
         extraCharge: bookingObj.extraCharge || 0,
         seatExtraChargePerSeat: bookingObj.seatExtraChargePerSeat || 100,
-        bookingBasis: bookingObj.bookingBasis || 'hourly',
-        selectedPlan: bookingObj.selectedPlan || null,
+        
+        // ✅ PLAN DETAILS
+        selectedPlan: bookingObj.selectedPlan ? {
+          _id: bookingObj.selectedPlan._id,
+          label: bookingObj.selectedPlan.label || '',
+          hours: bookingObj.selectedPlan.hours || 0,
+          cost: bookingObj.selectedPlan.cost || 0,
+          validity: bookingObj.selectedPlan.validity || 0,
+          description: bookingObj.selectedPlan.description || ''
+        } : null,
+        
+        // ✅ STATUS
         status: bookingObj.status || 'pending',
         paymentMethod: bookingObj.paymentMethod || 'cash',
         paymentStatus: bookingObj.paymentStatus || 'pending',
         isPaidToOwner: bookingObj.isPaidToOwner || false,
         termsAccepted: bookingObj.termsAccepted || false,
-        name: bookingObj.name,
-        mobile: bookingObj.mobile,
-        email: bookingObj.email,
-        createdAt: bookingObj.createdAt,
+        
+        // ✅ PAYMENT DETAILS
         transactionId: bookingObj.transactionId || null,
-        amountPaid: bookingObj.amountPaid || 0,
+        razorpayOrderId: bookingObj.razorpayOrderId || null,
+        razorpayPaymentId: bookingObj.razorpayPaymentId || null,
+        razorpaySignature: bookingObj.razorpaySignature || null,
+        paymentId: bookingObj.paymentId || '',
         paymentDetails: bookingObj.paymentDetails ? {
           mode: bookingObj.paymentDetails.mode || null,
           transactionId: bookingObj.paymentDetails.transactionId || null,
@@ -989,30 +1450,64 @@ router.get("/", async (req, res) => {
           upiApp: bookingObj.paymentDetails.upiApp || null,
           screenshot: bookingObj.paymentDetails.screenshot || null,
           cardNumber: bookingObj.paymentDetails.cardNumber || null,
-          cardHolderName: bookingObj.paymentDetails.cardHolderName || null
+          cardHolderName: bookingObj.paymentDetails.cardHolderName || null,
+          bankName: bookingObj.paymentDetails.bankName || null,
+          accountNumber: bookingObj.paymentDetails.accountNumber || null,
+          ifscCode: bookingObj.paymentDetails.ifscCode || null
         } : null,
-        visitingTimings: bookingObj.visitingTimings || [],
+        
+        // ✅ CHECK-IN/CHECK-OUT
         isCheckedIn: bookingObj.isCheckedIn || false,
         checkedInAt: bookingObj.checkedInAt || null,
         checkedInLat: bookingObj.checkedInLat || null,
         checkedInLng: bookingObj.checkedInLng || null,
         checkedInAddress: bookingObj.checkedInAddress || '',
         checkHistory: bookingObj.checkHistory || [],
+        checkInTime: bookingObj.checkInTime || null,
+        checkOutTime: bookingObj.checkOutTime || null,
+        actualCheckIn: bookingObj.actualCheckIn || null,
+        actualCheckOut: bookingObj.actualCheckOut || null,
+        
+        // ✅ VISITING TIMINGS
+        visitingTimings: bookingObj.visitingTimings || [],
+        
+        // ✅ REPLACEMENT INFO
         isReplaced: bookingObj.isReplaced || false,
         replacedFrom: bookingObj.replacedFrom || null,
         replacedTo: bookingObj.replacedTo || null,
         priceDifference: bookingObj.priceDifference || 0,
+        
+        // ✅ CANCELLATION INFO
+        cancellationReason: bookingObj.cancellationReason || null,
         cancelledAt: bookingObj.cancelledAt || null,
+        cancelledBy: bookingObj.cancelledBy || null,
         refundAmount: bookingObj.refundAmount || 0,
-        razorpayOrderId: bookingObj.razorpayOrderId || '',
-        razorpayPaymentId: bookingObj.razorpayPaymentId || '',
-        razorpaySignature: bookingObj.razorpaySignature || '',
-        paymentId: bookingObj.paymentId || '',
-        bookingType: bookingObj.bookingType || 'booking'
+        
+        // ✅ EXTENSION INFO
+        isExtended: bookingObj.isExtended || false,
+        extensionDetails: bookingObj.extensionDetails || null,
+        
+        // ✅ REVIEW & RATING
+        review: bookingObj.review || null,
+        rating: bookingObj.rating || null,
+        reviewGiven: bookingObj.reviewGiven || false,
+        
+        // ✅ NOTIFICATIONS
+        notifications: bookingObj.notifications || {
+          bookingConfirmed: false,
+          paymentReceived: false,
+          reminderSent: false,
+          checkInReminder: false,
+          checkOutReminder: false
+        },
+        
+        // ✅ TIMESTAMPS
+        createdAt: bookingObj.createdAt,
+        updatedAt: bookingObj.updatedAt
       };
     });
 
-    console.log(`✅ Admin: Found ${formattedBookings.length} bookings with seat details`);
+    console.log(`✅ Admin: Found ${formattedBookings.length} bookings with all details`);
     res.status(200).json({ 
       success: true,
       bookings: formattedBookings,
@@ -1046,7 +1541,7 @@ router.get("/cabin/:cabinId", async (req, res) => {
 });
 
 // ======================
-// 4. GET BOOKINGS BY USER ID (CUSTOMER) - FIXED
+// 4. GET BOOKINGS BY USER ID (CUSTOMER) - WITH FULL FIELDS
 // ======================
 router.get("/user", auth, async (req, res) => {
   try {
@@ -1059,37 +1554,28 @@ router.get("/user", auth, async (req, res) => {
     const bookings = await Booking.find({ userId })
       .populate({
         path: "cabinId",
-        select: "name address price capacity cabinType images seats isActive",
+        select: "name address price capacity cabinType images seats isActive amenities description location",
         populate: {
           path: "owner",
           model: "User",
-          select: "name email mobile address organizationName"
+          select: "name email mobile address organizationName profileImage"
         }
       })
       .sort({ createdAt: -1 });
 
     console.log("📦 Raw bookings count:", bookings.length);
-    console.log("📦 First booking selectedSeats:", bookings[0]?.selectedSeats);
 
-    // ✅ Format bookings with populated seat details
+    // ✅ Format bookings with ALL fields
     const formattedBookings = bookings.map(booking => {
       const bookingObj = booking.toObject();
-      
-      console.log(`🔍 Booking ${bookingObj._id} selectedSeats:`, bookingObj.selectedSeats);
-      console.log(`🔍 Cabin seats:`, bookingObj.cabinId?.seats);
       
       // ✅ POPULATE SELECTED SEATS WITH FULL DETAILS
       let populatedSelectedSeats = [];
       
-      // Check if selectedSeats exist and is an array
       if (bookingObj.selectedSeats && Array.isArray(bookingObj.selectedSeats) && bookingObj.selectedSeats.length > 0) {
-        // Check if cabin exists and has seats
         if (bookingObj.cabinId && bookingObj.cabinId.seats && Array.isArray(bookingObj.cabinId.seats)) {
-          
-          // Convert selected seat IDs to strings for comparison
           const selectedIds = bookingObj.selectedSeats.map(id => id.toString());
           
-          // Filter cabin seats that match selected IDs
           populatedSelectedSeats = bookingObj.cabinId.seats
             .filter(seat => {
               const seatId = seat._id ? seat._id.toString() : seat.toString();
@@ -1098,17 +1584,32 @@ router.get("/user", auth, async (req, res) => {
             .map(seat => ({
               _id: seat._id || seat,
               name: seat.name || 'Unknown Seat',
-              number: seat.number || 0
+              number: seat.number || 0,
+              type: seat.type || 'standard',
+              isActive: seat.isActive !== undefined ? seat.isActive : true
             }));
         }
       }
 
-      console.log(`✅ Populated seats for booking ${bookingObj._id}:`, populatedSelectedSeats);
+      // ✅ Format booking slots
+      let formattedSlots = [];
+      if (bookingObj.bookingSlots && Array.isArray(bookingObj.bookingSlots)) {
+        formattedSlots = bookingObj.bookingSlots.map(slot => ({
+          date: slot.date || '',
+          startTime: slot.startTime || '',
+          endTime: slot.endTime || '',
+          hours: slot.hours || 0
+        }));
+      }
 
-      // ✅ Return clean data
+      // ✅ Return COMPLETE data with ALL fields
       return {
+        // ✅ BASIC INFO
         _id: bookingObj._id,
-        // Cabin basic info
+        bookingType: bookingObj.bookingType || 'cabin',
+        bookingBasis: bookingObj.bookingBasis || 'hourly',
+        
+        // ✅ CABIN DETAILS
         cabin: bookingObj.cabinId ? {
           _id: bookingObj.cabinId._id,
           name: bookingObj.cabinId.name || 'N/A',
@@ -1118,56 +1619,128 @@ router.get("/user", auth, async (req, res) => {
           cabinType: bookingObj.cabinId.cabinType || 'normal',
           images: bookingObj.cabinId.images || [],
           isActive: bookingObj.cabinId.isActive || false,
+          amenities: bookingObj.cabinId.amenities || [],
+          description: bookingObj.cabinId.description || '',
+          location: bookingObj.cabinId.location || {
+            lat: 0,
+            lng: 0,
+            address: ''
+          },
           owner: bookingObj.cabinId.owner ? {
             _id: bookingObj.cabinId.owner._id,
             name: bookingObj.cabinId.owner.name,
             email: bookingObj.cabinId.owner.email,
             mobile: bookingObj.cabinId.owner.mobile,
             address: bookingObj.cabinId.owner.address,
-            organizationName: bookingObj.cabinId.owner.organizationName || ''
+            organizationName: bookingObj.cabinId.owner.organizationName || '',
+            profileImage: bookingObj.cabinId.owner.profileImage || ''
           } : null
         } : null,
-        // Booking details
+        
+        // ✅ USER DETAILS
+        userId: bookingObj.userId,
+        name: bookingObj.name || '',
+        mobile: bookingObj.mobile || '',
+        email: bookingObj.email || '',
+        ownerId: bookingObj.ownerId || null,
+        
+        // ✅ DATE & TIME
         startDate: bookingObj.startDate,
         startTime: bookingObj.startTime,
         endDate: bookingObj.endDate,
         endTime: bookingObj.endTime,
+        
+        // ✅ HOURS
         totalHours: bookingObj.totalHours || 0,
         remainingHours: bookingObj.remainingHours || 0,
         hoursUsed: bookingObj.hoursUsed || 0,
-        // Pricing
+        
+        // ✅ MULTI-DAY SLOTS
+        bookingSlots: formattedSlots,
+        totalDays: bookingObj.totalDays || 0,
+        dailyHours: bookingObj.dailyHours || [],
+        
+        // ✅ PRICING
         subtotal: bookingObj.subtotal || 0,
         gstAmount: bookingObj.gstAmount || 0,
         gstRate: bookingObj.gstRate || 0.18,
         totalPrice: bookingObj.totalPrice || 0,
-        // ✅ SEAT DETAILS - POPULATED
+        
+        // ✅ SEAT DETAILS
         selectedSeats: populatedSelectedSeats,
-        selectedSeatIds: bookingObj.selectedSeats || [], // Keep raw IDs too if needed
+        selectedSeatIds: bookingObj.selectedSeats || [],
         seatCount: bookingObj.seatCount || 0,
         extraCharge: bookingObj.extraCharge || 0,
         seatExtraChargePerSeat: bookingObj.seatExtraChargePerSeat || 100,
-        // Booking metadata
-        bookingBasis: bookingObj.bookingBasis || 'hourly',
-        selectedPlan: bookingObj.selectedPlan || null,
+        
+        // ✅ PLAN DETAILS
+        selectedPlan: bookingObj.selectedPlan ? {
+          _id: bookingObj.selectedPlan._id,
+          label: bookingObj.selectedPlan.label || '',
+          hours: bookingObj.selectedPlan.hours || 0,
+          cost: bookingObj.selectedPlan.cost || 0,
+          validity: bookingObj.selectedPlan.validity || 0,
+          description: bookingObj.selectedPlan.description || ''
+        } : null,
+        
+        // ✅ STATUS
         status: bookingObj.status || 'pending',
         paymentMethod: bookingObj.paymentMethod || 'cash',
         paymentStatus: bookingObj.paymentStatus || 'pending',
         isPaidToOwner: bookingObj.isPaidToOwner || false,
-        termsAccepted: bookingObj.termsAccepted || false,
-        name: bookingObj.name,
-        mobile: bookingObj.mobile,
-        email: bookingObj.email,
-        createdAt: bookingObj.createdAt,
+        
+        // ✅ PAYMENT DETAILS
         transactionId: bookingObj.transactionId || null,
-        // Payment details
+        razorpayOrderId: bookingObj.razorpayOrderId || null,
+        razorpayPaymentId: bookingObj.razorpayPaymentId || null,
+        razorpaySignature: bookingObj.razorpaySignature || null,
         paymentDetails: bookingObj.paymentDetails ? {
           mode: bookingObj.paymentDetails.mode || null,
           transactionId: bookingObj.paymentDetails.transactionId || null,
           paymentDate: bookingObj.paymentDetails.paymentDate || null,
           upiId: bookingObj.paymentDetails.upiId || null,
           upiApp: bookingObj.paymentDetails.upiApp || null,
-          screenshot: bookingObj.paymentDetails.screenshot || null
-        } : null
+          screenshot: bookingObj.paymentDetails.screenshot || null,
+          bankName: bookingObj.paymentDetails.bankName || null,
+          accountNumber: bookingObj.paymentDetails.accountNumber || null,
+          ifscCode: bookingObj.paymentDetails.ifscCode || null
+        } : null,
+        
+        // ✅ TERMS & CONDITIONS
+        termsAccepted: bookingObj.termsAccepted || false,
+        
+        // ✅ TIMESTAMPS
+        createdAt: bookingObj.createdAt,
+        updatedAt: bookingObj.updatedAt,
+        
+        // ✅ CANCELLATION INFO
+        cancellationReason: bookingObj.cancellationReason || null,
+        cancelledAt: bookingObj.cancelledAt || null,
+        cancelledBy: bookingObj.cancelledBy || null,
+        
+        // ✅ REVIEW & RATING
+        review: bookingObj.review || null,
+        rating: bookingObj.rating || null,
+        reviewGiven: bookingObj.reviewGiven || false,
+        
+        // ✅ ADDITIONAL FIELDS
+        bookingCode: bookingObj.bookingCode || null,
+        qrCode: bookingObj.qrCode || null,
+        checkInTime: bookingObj.checkInTime || null,
+        checkOutTime: bookingObj.checkOutTime || null,
+        actualCheckIn: bookingObj.actualCheckIn || null,
+        actualCheckOut: bookingObj.actualCheckOut || null,
+        isExtended: bookingObj.isExtended || false,
+        extensionDetails: bookingObj.extensionDetails || null,
+        
+        // ✅ NOTIFICATIONS
+        notifications: bookingObj.notifications || {
+          bookingConfirmed: false,
+          paymentReceived: false,
+          reminderSent: false,
+          checkInReminder: false,
+          checkOutReminder: false
+        }
       };
     });
 
@@ -1183,6 +1756,7 @@ router.get("/user", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch bookings" });
   }
 });
+
 
 // Using the old route as fallback or for specific user fetch if needed (optional)
 router.get("/userbookings/:userId", async (req, res) => {

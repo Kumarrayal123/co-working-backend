@@ -45,6 +45,19 @@ const bookingSchema = new mongoose.Schema({
     ref: "User",
   },
 
+  // In Booking Model Schema
+bookingSlots: [{
+  date: String,
+  startTime: String,
+  endTime: String,
+  hours: Number
+}],
+totalDays: {
+  type: Number,
+  default: 0
+},
+dailyHours: [Number],
+
   startDate: String,
   startTime: String,
   endDate: String,

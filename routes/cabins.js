@@ -262,24 +262,8 @@ router.post("/", auth, upload.fields([
       });
     }
 
-    // ─── VALIDATE SEATS ───
-    if (!seats || seats.length === 0) {
-      console.log("❌ No seats provided");
-      return res.status(400).json({
-        success: false,
-        error: "At least one seat is required for the cabin"
-      });
-    }
-
-    // ─── VALIDATE SEAT COUNT MATCHES CAPACITY ───
-    const capacityNum = Number(capacity);
-    if (seats.length !== capacityNum) {
-      console.log(`❌ Seat count mismatch: ${seats.length} seats vs ${capacityNum} capacity`);
-      return res.status(400).json({
-        success: false,
-        error: `Number of seats (${seats.length}) does not match capacity (${capacityNum})`
-      });
-    }
+    // ✅ REMOVED: Seat validation - No longer required
+    // Seats are optional now
 
     console.log("📋 Cabin Data:");
     console.log("   ├─ Name:", name);
@@ -295,7 +279,7 @@ router.post("/", auth, upload.fields([
       owner: userId,
       name,
       description: description || '',
-      capacity: capacityNum,
+      capacity: Number(capacity),
       address,
       price: Number(price),
       cabinType: cabinType || 'normal',
