@@ -68,7 +68,7 @@ router.get("/test-route", (req, res) => {
 });
 
 // ======================
-// ⭐ 1. GET OWNER BOOKINGS (FOR DOCTORS/OWNERS)
+// ⭐ 1. GET OWNER BOOKINGS (FOR DOCTORS/OWNERS) - WITH ALL FIELDS
 // ======================
 router.get("/owner-bookings", auth, async (req, res) => {
   try {
@@ -76,34 +76,36 @@ router.get("/owner-bookings", auth, async (req, res) => {
     console.log("Fetching owner bookings for ID:", ownerId);
 
     // Find all cabins owned by this user
-    const userCabins = await Cabin.find({ owner: ownerId }).select("_id name address price images seats");
+    const userCabins = await Cabin.find({ owner: ownerId }).select("_id name address price images seats isChamber amenities description location");
     const cabinIds = userCabins.map(cabin => cabin._id);
     console.log("Found cabin IDs for owner:", cabinIds);
 
     // Find all bookings for these cabins
     const bookings = await Booking.find({ cabinId: { $in: cabinIds } })
-      .populate("cabinId", "name address price images seats")
-      .populate("userId", "name mobile email")
+      .populate({
+        path: "cabinId",
+        populate: {
+          path: "owner",
+          model: "User",
+          select: "name email mobile address organizationName gstNumber profileImage"
+        }
+      })
+      .populate("userId", "name mobile email profileImage")
       .sort({ createdAt: -1 });
 
     console.log(`Found ${bookings.length} bookings for owner`);
 
-    // ✅ Format bookings with populated seat details
+    // ✅ Format bookings with ALL populated seat details
     const formattedBookings = bookings.map(booking => {
       const bookingObj = booking.toObject();
       
       // ✅ POPULATE SELECTED SEATS WITH FULL DETAILS
       let populatedSelectedSeats = [];
       
-      // Check if selectedSeats exist and is an array
       if (bookingObj.selectedSeats && Array.isArray(bookingObj.selectedSeats) && bookingObj.selectedSeats.length > 0) {
-        // Check if cabin exists and has seats
         if (bookingObj.cabinId && bookingObj.cabinId.seats && Array.isArray(bookingObj.cabinId.seats)) {
-          
-          // Convert selected seat IDs to strings for comparison
           const selectedIds = bookingObj.selectedSeats.map(id => id.toString());
           
-          // Filter cabin seats that match selected IDs
           populatedSelectedSeats = bookingObj.cabinId.seats
             .filter(seat => {
               const seatId = seat._id ? seat._id.toString() : seat.toString();
@@ -112,70 +114,197 @@ router.get("/owner-bookings", auth, async (req, res) => {
             .map(seat => ({
               _id: seat._id || seat,
               name: seat.name || 'Unknown Seat',
-              number: seat.number || 0
+              number: seat.number || 0,
+              type: seat.type || 'standard',
+              isActive: seat.isActive !== undefined ? seat.isActive : true
             }));
         }
       }
 
-      // ✅ Return clean data with populated seats
+      // ✅ Format booking slots
+      let formattedSlots = [];
+      if (bookingObj.bookingSlots && Array.isArray(bookingObj.bookingSlots)) {
+        formattedSlots = bookingObj.bookingSlots.map(slot => ({
+          date: slot.date || '',
+          startTime: slot.startTime || '',
+          endTime: slot.endTime || '',
+          hours: slot.hours || 0
+        }));
+      }
+
+      // ✅ Return COMPLETE data with ALL fields (same as admin bookings)
       return {
+        // ✅ BASIC INFO
         _id: bookingObj._id,
+        bookingType: bookingObj.bookingType || 'booking',
+        bookingBasis: bookingObj.bookingBasis || 'hourly',
+        bookingCode: bookingObj.bookingCode || null,
+        qrCode: bookingObj.qrCode || null,
+        
+        // ✅ CABIN DETAILS
         cabin: bookingObj.cabinId ? {
           _id: bookingObj.cabinId._id,
           name: bookingObj.cabinId.name || 'N/A',
           address: bookingObj.cabinId.address || 'N/A',
           price: bookingObj.cabinId.price || 0,
+          capacity: bookingObj.cabinId.capacity || 0,
+          cabinType: bookingObj.cabinId.cabinType || 'normal',
           images: bookingObj.cabinId.images || [],
-          seats: bookingObj.cabinId.seats || []
+          isActive: bookingObj.cabinId.isActive || false,
+          isChamber: bookingObj.cabinId.isChamber || false,
+          amenities: bookingObj.cabinId.amenities || {},
+          description: bookingObj.cabinId.description || '',
+          location: bookingObj.cabinId.location || {
+            lat: 0,
+            lng: 0,
+            address: ''
+          },
+          seats: bookingObj.cabinId.seats || [],
+          owner: bookingObj.cabinId.owner ? {
+            _id: bookingObj.cabinId.owner._id,
+            name: bookingObj.cabinId.owner.name,
+            email: bookingObj.cabinId.owner.email,
+            mobile: bookingObj.cabinId.owner.mobile,
+            address: bookingObj.cabinId.owner.address,
+            organizationName: bookingObj.cabinId.owner.organizationName || '',
+            gstNumber: bookingObj.cabinId.owner.gstNumber || '',
+            profileImage: bookingObj.cabinId.owner.profileImage || ''
+          } : null
         } : null,
+        
+        // ✅ USER DETAILS
         user: bookingObj.userId ? {
           _id: bookingObj.userId._id,
           name: bookingObj.userId.name || 'N/A',
           email: bookingObj.userId.email || 'N/A',
-          mobile: bookingObj.userId.mobile || 'N/A'
+          mobile: bookingObj.userId.mobile || 'N/A',
+          profileImage: bookingObj.userId.profileImage || ''
         } : null,
+        userId: bookingObj.userId?._id || bookingObj.userId || null,
+        name: bookingObj.name || '',
+        mobile: bookingObj.mobile || '',
+        email: bookingObj.email || '',
+        ownerId: bookingObj.ownerId || null,
+        
+        // ✅ DATE & TIME
         startDate: bookingObj.startDate,
         startTime: bookingObj.startTime,
         endDate: bookingObj.endDate,
         endTime: bookingObj.endTime,
+        
+        // ✅ HOURS
         totalHours: bookingObj.totalHours || 0,
         remainingHours: bookingObj.remainingHours || 0,
         hoursUsed: bookingObj.hoursUsed || 0,
+        
+        // ✅ MULTI-DAY SLOTS
+        bookingSlots: formattedSlots,
+        totalDays: bookingObj.totalDays || 0,
+        dailyHours: bookingObj.dailyHours || [],
+        
+        // ✅ PRICING
         subtotal: bookingObj.subtotal || 0,
         gstAmount: bookingObj.gstAmount || 0,
         gstRate: bookingObj.gstRate || 0.18,
         totalPrice: bookingObj.totalPrice || 0,
-        // ✅ SEAT DETAILS - POPULATED
+        amountPaid: bookingObj.amountPaid || 0,
+        
+        // ✅ SEAT DETAILS
         selectedSeats: populatedSelectedSeats,
         selectedSeatIds: bookingObj.selectedSeats || [],
         seatCount: bookingObj.seatCount || 0,
         extraCharge: bookingObj.extraCharge || 0,
         seatExtraChargePerSeat: bookingObj.seatExtraChargePerSeat || 100,
-        bookingBasis: bookingObj.bookingBasis || 'hourly',
-        selectedPlan: bookingObj.selectedPlan || null,
+        
+        // ✅ PLAN DETAILS
+        selectedPlan: bookingObj.selectedPlan ? {
+          _id: bookingObj.selectedPlan._id,
+          label: bookingObj.selectedPlan.label || '',
+          hours: bookingObj.selectedPlan.hours || 0,
+          cost: bookingObj.selectedPlan.cost || 0,
+          validity: bookingObj.selectedPlan.validity || 0,
+          description: bookingObj.selectedPlan.description || ''
+        } : null,
+        
+        // ✅ STATUS
         status: bookingObj.status || 'pending',
         paymentMethod: bookingObj.paymentMethod || 'cash',
         paymentStatus: bookingObj.paymentStatus || 'pending',
         isPaidToOwner: bookingObj.isPaidToOwner || false,
         termsAccepted: bookingObj.termsAccepted || false,
-        name: bookingObj.name,
-        mobile: bookingObj.mobile,
-        email: bookingObj.email,
-        createdAt: bookingObj.createdAt,
+        
+        // ✅ PAYMENT DETAILS
         transactionId: bookingObj.transactionId || null,
-        amountPaid: bookingObj.amountPaid || 0,
+        razorpayOrderId: bookingObj.razorpayOrderId || null,
+        razorpayPaymentId: bookingObj.razorpayPaymentId || null,
+        razorpaySignature: bookingObj.razorpaySignature || null,
+        paymentId: bookingObj.paymentId || '',
         paymentDetails: bookingObj.paymentDetails ? {
           mode: bookingObj.paymentDetails.mode || null,
           transactionId: bookingObj.paymentDetails.transactionId || null,
           paymentDate: bookingObj.paymentDetails.paymentDate || null,
           upiId: bookingObj.paymentDetails.upiId || null,
           upiApp: bookingObj.paymentDetails.upiApp || null,
-          screenshot: bookingObj.paymentDetails.screenshot || null
-        } : null
+          screenshot: bookingObj.paymentDetails.screenshot || null,
+          cardNumber: bookingObj.paymentDetails.cardNumber || null,
+          cardHolderName: bookingObj.paymentDetails.cardHolderName || null,
+          bankName: bookingObj.paymentDetails.bankName || null,
+          accountNumber: bookingObj.paymentDetails.accountNumber || null,
+          ifscCode: bookingObj.paymentDetails.ifscCode || null
+        } : null,
+        
+        // ✅ CHECK-IN/CHECK-OUT
+        isCheckedIn: bookingObj.isCheckedIn || false,
+        checkedInAt: bookingObj.checkedInAt || null,
+        checkedInLat: bookingObj.checkedInLat || null,
+        checkedInLng: bookingObj.checkedInLng || null,
+        checkedInAddress: bookingObj.checkedInAddress || '',
+        checkHistory: bookingObj.checkHistory || [],
+        checkInTime: bookingObj.checkInTime || null,
+        checkOutTime: bookingObj.checkOutTime || null,
+        actualCheckIn: bookingObj.actualCheckIn || null,
+        actualCheckOut: bookingObj.actualCheckOut || null,
+        
+        // ✅ VISITING TIMINGS
+        visitingTimings: bookingObj.visitingTimings || [],
+        
+        // ✅ REPLACEMENT INFO
+        isReplaced: bookingObj.isReplaced || false,
+        replacedFrom: bookingObj.replacedFrom || null,
+        replacedTo: bookingObj.replacedTo || null,
+        priceDifference: bookingObj.priceDifference || 0,
+        
+        // ✅ CANCELLATION INFO
+        cancellationReason: bookingObj.cancellationReason || null,
+        cancelledAt: bookingObj.cancelledAt || null,
+        cancelledBy: bookingObj.cancelledBy || null,
+        refundAmount: bookingObj.refundAmount || 0,
+        
+        // ✅ EXTENSION INFO
+        isExtended: bookingObj.isExtended || false,
+        extensionDetails: bookingObj.extensionDetails || null,
+        
+        // ✅ REVIEW & RATING
+        review: bookingObj.review || null,
+        rating: bookingObj.rating || null,
+        reviewGiven: bookingObj.reviewGiven || false,
+        
+        // ✅ NOTIFICATIONS
+        notifications: bookingObj.notifications || {
+          bookingConfirmed: false,
+          paymentReceived: false,
+          reminderSent: false,
+          checkInReminder: false,
+          checkOutReminder: false
+        },
+        
+        // ✅ TIMESTAMPS
+        createdAt: bookingObj.createdAt,
+        updatedAt: bookingObj.updatedAt
       };
     });
 
-    console.log(`✅ Formatted ${formattedBookings.length} bookings with seat details`);
+    console.log(`✅ Owner: Found ${formattedBookings.length} bookings with all details`);
     res.status(200).json({ 
       success: true,
       bookings: formattedBookings,
@@ -186,6 +315,7 @@ router.get("/owner-bookings", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch bookings for your cabins" });
   }
 });
+
 
 // // ======================
 // // CREATE BOOKING
@@ -1554,7 +1684,7 @@ router.get("/user", auth, async (req, res) => {
     const bookings = await Booking.find({ userId })
       .populate({
         path: "cabinId",
-        select: "name address price capacity cabinType images seats isActive amenities description location",
+        select: "name address price capacity cabinType images seats isActive isChamber amenities description location",
         populate: {
           path: "owner",
           model: "User",
@@ -1619,6 +1749,7 @@ router.get("/user", auth, async (req, res) => {
           cabinType: bookingObj.cabinId.cabinType || 'normal',
           images: bookingObj.cabinId.images || [],
           isActive: bookingObj.cabinId.isActive || false,
+          isChamber: bookingObj.cabinId.isChamber || false, // ✅ ADDED isChamber
           amenities: bookingObj.cabinId.amenities || [],
           description: bookingObj.cabinId.description || '',
           location: bookingObj.cabinId.location || {
@@ -1756,7 +1887,6 @@ router.get("/user", auth, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch bookings" });
   }
 });
-
 
 // Using the old route as fallback or for specific user fetch if needed (optional)
 router.get("/userbookings/:userId", async (req, res) => {
