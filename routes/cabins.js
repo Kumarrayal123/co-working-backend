@@ -8,6 +8,8 @@ const CabinOrder = require('../model/CabinOrder');
 const Query = require('../model/Query');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
+const User = require("../model/User");
+
 
 // Initialize Razorpay
 const razorpay = new Razorpay({
@@ -1094,6 +1096,174 @@ router.delete('/deletequery/:id', async (req, res) => {
       success: false,
       message: 'Failed to delete query',
       error: error.message
+    });
+  }
+});
+
+
+
+// ============================================================
+// 1. TOGGLE WISHLIST - Add/Remove with one click
+// ============================================================
+router.post("/toggle/:userId", auth, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { cabinId } = req.body;
+
+    if (!cabinId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Cabin ID is required" 
+      });
+    }
+
+    // ✅ Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "User not found" 
+      });
+    }
+
+    // ✅ Check if cabin exists
+    const cabin = await Cabin.findById(cabinId);
+    if (!cabin) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Cabin not found" 
+      });
+    }
+
+    // ✅ Toggle wishlist - Push/Pop
+    const index = user.wishlist.indexOf(cabinId);
+    let action = '';
+
+    if (index > -1) {
+      // ✅ Already exists - Remove it (POP)
+      user.wishlist.splice(index, 1);
+      action = 'removed';
+    } else {
+      // ✅ Not exists - Add it (PUSH)
+      user.wishlist.push(cabinId);
+      action = 'added';
+    }
+
+    await user.save();
+
+    // ✅ Populate wishlist for response
+    const populatedUser = await User.findById(userId).populate('wishlist');
+
+    console.log(`📋 Wishlist ${action} for user: ${user.name}`);
+    console.log(`📊 Wishlist count: ${populatedUser.wishlist.length}`);
+
+    res.status(200).json({
+      success: true,
+      message: `Cabin ${action} from wishlist`,
+      action: action,
+      wishlist: populatedUser.wishlist,
+      count: populatedUser.wishlist.length
+    });
+
+  } catch (error) {
+    console.error("Error toggling wishlist:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to update wishlist" 
+    });
+  }
+});
+
+// ============================================================
+// 2. GET ALL WISHLIST - Get all wishlist items for a user
+// ============================================================
+router.get("/mywishlist/:userId", auth, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // ✅ Check if user exists
+    const user = await User.findById(userId).populate('wishlist');
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "User not found" 
+      });
+    }
+
+    console.log(`📋 Wishlist fetched for user: ${user.name}`);
+    console.log(`📊 Wishlist count: ${user.wishlist.length}`);
+
+    res.status(200).json({
+      success: true,
+      wishlist: user.wishlist,
+      count: user.wishlist.length
+    });
+
+  } catch (error) {
+    console.error("Error fetching wishlist:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to fetch wishlist" 
+    });
+  }
+});
+
+// ============================================================
+// 3. DELETE FROM WISHLIST - Direct remove by ID
+// ============================================================
+router.delete("/:userId/:cabinId", auth, async (req, res) => {
+  try {
+    const { userId, cabinId } = req.params;
+
+    // ✅ Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "User not found" 
+      });
+    }
+
+    // ✅ Check if cabin exists
+    const cabin = await Cabin.findById(cabinId);
+    if (!cabin) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Cabin not found" 
+      });
+    }
+
+    // ✅ Check if in wishlist
+    const index = user.wishlist.indexOf(cabinId);
+    if (index === -1) {
+      return res.status(400).json({
+        success: false,
+        error: "Cabin not in wishlist"
+      });
+    }
+
+    // ✅ Remove from wishlist
+    user.wishlist.splice(index, 1);
+    await user.save();
+
+    // ✅ Populate wishlist for response
+    const populatedUser = await User.findById(userId).populate('wishlist');
+
+    console.log(`📋 Cabin removed from wishlist for user: ${user.name}`);
+    console.log(`📊 Wishlist count: ${populatedUser.wishlist.length}`);
+
+    res.status(200).json({
+      success: true,
+      message: "Cabin removed from wishlist",
+      wishlist: populatedUser.wishlist,
+      count: populatedUser.wishlist.length
+    });
+
+  } catch (error) {
+    console.error("Error removing from wishlist:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to remove from wishlist" 
     });
   }
 });

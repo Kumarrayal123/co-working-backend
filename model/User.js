@@ -36,6 +36,9 @@ const userSchema = new mongoose.Schema({
   // Overall User Verification Status
   status: { type: String, default: "pending" },
 
+  wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Cabin' }],
+
+
   createdAt: { type: Date, default: Date.now }
 });
 
