@@ -276,6 +276,234 @@ router.post(
   }
 );
 
+
+
+// ============================================
+// 1. FORGOT PASSWORD - VERIFY EMAIL
+// ============================================
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required"
+      });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email address"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Email verified successfully",
+      email: user.email
+    });
+
+  } catch (err) {
+    console.error("❌ Forgot Password Error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to verify email"
+    });
+  }
+});
+
+// ============================================
+// 2. RESET PASSWORD - UPDATE PASSWORD
+// ============================================
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required"
+      });
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters long"
+      });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email address"
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Password reset successfully! You can now login with your new password."
+    });
+
+  } catch (err) {
+    console.error("❌ Reset Password Error:", err);
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to reset password"
+    });
+  }
+});
+
+
+
+// ============================================
+// UPDATE DOCTOR PROFILE API - WITH ALL DOCUMENTS
+// ============================================
+router.put(
+  "/profile/:userId",
+  upload.fields([
+    { name: "adharCard", maxCount: 1 },
+    { name: "panCard", maxCount: 1 },
+    { name: "mbbsCertificate", maxCount: 1 },
+    { name: "pmcRegistration", maxCount: 1 },
+    { name: "nmrId", maxCount: 1 }
+  ]),
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const {
+        name,
+        email,
+        mobile,
+        address,
+        organizationName,
+        gstNumber,
+        dmhoNumber,
+        panNumber,
+        specialization,
+        qualification,
+        experience,
+        licenseNumber,
+        hospitalAffiliation,
+        consultationFee,
+        availableDays,
+        availableTimeStart,
+        availableTimeEnd
+      } = req.body;
+
+      // Find user
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // ============================================
+      // UPDATE TEXT FIELDS
+      // ============================================
+      const updateData = {};
+
+      // Personal Information
+      if (name) updateData.name = name;
+      if (email) updateData.email = email;
+      if (mobile) updateData.mobile = mobile;
+      if (address) updateData.address = address;
+
+      // Organization Details
+      if (organizationName !== undefined) updateData.organizationName = organizationName;
+      if (gstNumber !== undefined) updateData.gstNumber = gstNumber;
+      if (dmhoNumber !== undefined) updateData.dmhoNumber = dmhoNumber;
+      if (panNumber !== undefined) updateData.panNumber = panNumber;
+
+      // Doctor Specific Fields
+      if (specialization !== undefined) updateData.specialization = specialization;
+      if (qualification !== undefined) updateData.qualification = qualification;
+      if (experience !== undefined) updateData.experience = experience;
+      if (licenseNumber !== undefined) updateData.licenseNumber = licenseNumber;
+      if (hospitalAffiliation !== undefined) updateData.hospitalAffiliation = hospitalAffiliation;
+      if (consultationFee !== undefined) updateData.consultationFee = consultationFee;
+      if (availableDays !== undefined) updateData.availableDays = availableDays;
+      if (availableTimeStart !== undefined) updateData.availableTimeStart = availableTimeStart;
+      if (availableTimeEnd !== undefined) updateData.availableTimeEnd = availableTimeEnd;
+
+      // ============================================
+      // UPDATE DOCUMENT FILES
+      // ============================================
+      const fields = [
+        { key: "adharCard", statusKey: "adharCardStatus" },
+        { key: "panCard", statusKey: "panCardStatus" },
+        { key: "mbbsCertificate", statusKey: "mbbsCertificateStatus" },
+        { key: "pmcRegistration", statusKey: "pmcRegistrationStatus" },
+        { key: "nmrId", statusKey: "nmrIdStatus" }
+      ];
+
+      // Helper function to delete old file
+      const deleteOldFile = (filePath) => {
+        if (filePath && fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+            console.log(`Deleted old file: ${filePath}`);
+          } catch (err) {
+            console.error(`Error deleting file: ${filePath}`, err);
+          }
+        }
+      };
+
+      // Check each field for new file upload
+      fields.forEach(({ key, statusKey }) => {
+        if (req.files && req.files[key] && req.files[key].length > 0) {
+          const newFilePath = req.files[key][0].path.replace(/\\/g, "/");
+          
+          // Delete old file if exists
+          if (user[key]) {
+            deleteOldFile(user[key]);
+          }
+          
+          // Update with new file path
+          updateData[key] = newFilePath;
+          
+          // Set status to 'pending' for admin verification
+          updateData[statusKey] = "pending";
+          console.log(`📄 ${key} uploaded, status set to pending`);
+        }
+      });
+
+      // ============================================
+      // UPDATE USER
+      // ============================================
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $set: updateData },
+        { new: true, runValidators: true }
+      );
+
+      // ============================================
+      // RESPONSE
+      // ============================================
+      res.json({
+        success: true,
+        message: "Profile updated successfully",
+        user: updatedUser
+      });
+
+    } catch (err) {
+      console.error("❌ Update Profile Error:", err);
+      res.status(500).json({
+        success: false,
+        message: err.message || "Failed to update profile"
+      });
+    }
+  }
+);
+
+
 // Get all registered users
 router.get("/all", async (req, res) => {
   try {

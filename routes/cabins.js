@@ -457,9 +457,14 @@ router.post('/createcabinorder', auth, async (req, res) => {
     const razorpayOrder = await razorpay.orders.create(options);
     console.log("✅ Razorpay order created:", razorpayOrder.id);
 
-    // ─── SET EXPIRY ───
+    // ─── ✅ FIX: SET EXPIRY TO 1 MONTH ───
     const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    expiryDate.setMonth(expiryDate.getMonth() + 1); // ✅ 1 MONTH (30 days)
+    
+    console.log("📅 Expiry Date set to:", expiryDate);
+    console.log("   📆 Today:", new Date());
+    console.log("   📆 Expires on:", expiryDate);
+    console.log("   📆 Days until expiry:", Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24)));
 
     // ─── SAVE ORDER ───
     const order = new CabinOrder({
@@ -472,7 +477,7 @@ router.post('/createcabinorder', auth, async (req, res) => {
       paymentStatus: 'pending',
       razorpayOrderId: razorpayOrder.id,
       startDate: new Date(),
-      expiryDate: expiryDate,
+      expiryDate: expiryDate, // ✅ 1 month expiry
       status: 'active',
       isFirstCabin: isFirstCabin
     });
@@ -482,7 +487,7 @@ router.post('/createcabinorder', auth, async (req, res) => {
 
     // ─── UPDATE CABIN ───
     await Cabin.findByIdAndUpdate(cabinId, {
-      $set: { expiryDate: expiryDate }
+      $set: { expiryDate: expiryDate } // ✅ 1 month expiry
     });
     console.log("✅ Cabin expiry updated:", expiryDate);
 
@@ -492,7 +497,7 @@ router.post('/createcabinorder', auth, async (req, res) => {
     console.log("   🆔 Order ID:", order._id);
     console.log("   👤 Owner ID:", ownerId);
     console.log("   💰 Amount: ₹", totalAmount);
-    console.log("   📅 Expiry:", expiryDate);
+    console.log("   📅 Expiry (1 month):", expiryDate);
     console.log("─────────────────────────────────────────────");
     console.log("═════════════════════════════════════════════");
 
