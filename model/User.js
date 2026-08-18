@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   mobile: { type: String },
   address: { type: String },
   organizationName: { type: String, default: '' },
-  role: { type: String, enum: ["user", "doctor", "cabinowner", "cabinOwner"], default: "user" },
+  role: { type: String, enum: ["user", "doctor", "cabinowner", "cabinOwner", "cafe"], default: "user" },
   isDoctor: { type: Boolean, default: false },
 
   // PAN Number field - ADD THIS

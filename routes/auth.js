@@ -217,12 +217,14 @@ router.post(
         role,
         organizationName,
         gstNumber,
-        panNumber  // ← ADD THIS
+        panNumber
       } = req.body;
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
       const isDoctor = role === "doctor";
+      const isCafe = role === "cafe";
+      const isCabinOwner = role === "cabinOwner";
 
       const userData = {
         name,
@@ -231,15 +233,16 @@ router.post(
         mobile,
         address,
         role: role || "user",
-        status: isDoctor ? "pending" : "active",
-        // Organization fields
+        status: (isDoctor || isCafe || isCabinOwner) ? "pending" : "active",
         organizationName: organizationName || "",
         gstNumber: gstNumber || "",
-        panNumber: panNumber || "",  // ← ADD THIS - STORE PAN NUMBER
-        isDoctor: isDoctor || false
+        panNumber: panNumber || "",
+        isDoctor: isDoctor || false,
+        isCafe: isCafe || false,
+        isCabinOwner: isCabinOwner || false
       };
 
-      // Only add document fields for doctors
+      // Handle document uploads
       if (isDoctor) {
         userData.adharCard = req.files?.adharCard?.[0]?.path.replace(/\\/g, "/") || null;
         userData.panCard = req.files?.panCard?.[0]?.path.replace(/\\/g, "/") || null;
@@ -252,8 +255,16 @@ router.post(
         userData.mbbsCertificateStatus = "pending";
         userData.pmcRegistrationStatus = "pending";
         userData.nmrIdStatus = "pending";
-      } else {
-        // For regular users, still allow PAN card upload
+      } 
+      else if (isCafe || isCabinOwner) {
+        // Cafe and Cabin Owner - allow PAN card upload
+        if (req.files?.panCard?.[0]) {
+          userData.panCard = req.files.panCard[0].path.replace(/\\/g, "/");
+          userData.panCardStatus = "pending";
+        }
+      } 
+      else {
+        // Regular user - allow PAN card upload if provided
         if (req.files?.panCard?.[0]) {
           userData.panCard = req.files.panCard[0].path.replace(/\\/g, "/");
           userData.panCardStatus = "pending";
@@ -263,19 +274,34 @@ router.post(
       const user = new User(userData);
       await user.save();
 
+      let successMessage = "Registration successful. You can login now.";
+      if (isDoctor) {
+        successMessage = "Doctor registered successfully. Wait for admin approval.";
+      } else if (isCafe) {
+        successMessage = "Cafe registered successfully. Wait for admin approval.";
+      } else if (isCabinOwner) {
+        successMessage = "Cabin Owner registered successfully. Wait for admin approval.";
+      }
+
       res.json({
-        message: isDoctor
-          ? "Doctor registered successfully. Wait for admin approval."
-          : "Registration successful. You can login now.",
-        user
+        message: successMessage,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          status: user.status
+        }
       });
 
     } catch (err) {
-      res.status(500).json({ message: err.message });
+      console.error("Registration Error:", err);
+      res.status(500).json({ 
+        message: err.message || "Registration failed. Please try again." 
+      });
     }
   }
 );
-
 
 
 // ============================================
