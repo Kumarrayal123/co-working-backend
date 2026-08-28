@@ -1,3 +1,106 @@
+// const mongoose = require("mongoose");
+
+// const pricingPlanSchema = new mongoose.Schema({
+//   label: { type: String },        // e.g. "Monthly", "Weekly"
+//   hours: { type: Number },        // total hours included
+//   cost: { type: Number },         // price in ₹
+//   validity: { type: Number },     // validity in days
+// }, { _id: true });
+
+// const cabinSchema = new mongoose.Schema({
+//   owner: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: "User",
+//     required: true,
+//   },
+//   name: { type: String, required: true },
+//   description: { type: String },
+//   capacity: { type: String, required: true },
+//   price: { type: Number, default: 0 },          // kept for backward compat
+//   pricingPlans: { type: [pricingPlanSchema], default: [] },
+//   images: { type: [String] },
+//   address: { type: String, required: true },
+//   // ✅ Complete Amenities with all fields
+//   amenities: {
+//     // Normal Amenities (4)
+//     wifi: { type: Boolean, default: false },
+//     parking: { type: Boolean, default: false },
+//     lockers: { type: Boolean, default: false },
+//     comfortSeating: { type: Boolean, default: false },
+
+//     // Exclusive Amenities (Additional 8)
+//     privateWashroom: { type: Boolean, default: false },
+//     secureAccess: { type: Boolean, default: false },
+//     coffee: { type: Boolean, default: false },
+//     gym: { type: Boolean, default: false },
+//     ac: { type: Boolean, default: false },
+//     tv: { type: Boolean, default: false },
+//     printer: { type: Boolean, default: false },
+//     phone: { type: Boolean, default: false },
+//   },
+//   cabinType: { type: String, enum: ['normal', 'exclusive'], default: 'normal' }, // ✅ New field
+
+//   // ✅ SEATS FIELD - NEW
+//   seats: {
+//     type: [{
+//       name: {
+//         type: String,
+//         required: true
+//       },
+//       number: {
+//         type: Number,
+//         required: true
+//       }
+//     }],
+//     default: [],
+//     validate: {
+//       validator: function (seats) {
+//         // Check if all seat numbers are unique
+//         const numbers = seats.map(s => s.number);
+//         return numbers.length === new Set(numbers).size;
+//       },
+//       message: 'Seat numbers must be unique'
+//     }
+//   },
+//   // ✅ Status fields
+//   isActive: {
+//     type: Boolean,
+//     default: true           // ✅ Active by default
+//   },
+
+//   expiryDate: {
+//     type: Date,
+//     default: null
+//   },
+
+//   // ✅ NEW: Video Upload Support
+//   videos: { type: [String], default: [] },
+
+//   // ✅ NEW: Open/Close Time (Replaces Seats)
+//   openTime: {
+//     type: String,
+//     default: '09:00'
+//   },
+//   closeTime: {
+//     type: String,
+//     default: '21:00'
+//   },
+//   is24x7: { type: Boolean, default: false },
+
+//   // models/Cabin.js - Add this field
+//   isChamber: {
+//     type: Boolean,
+//     default: false
+//   },
+
+
+//   createdAt: { type: Date, default: Date.now },
+// });
+
+// module.exports = mongoose.model("Cabin", cabinSchema);
+
+
+
 const mongoose = require("mongoose");
 
 const pricingPlanSchema = new mongoose.Schema({
@@ -20,17 +123,17 @@ const cabinSchema = new mongoose.Schema({
   pricingPlans: { type: [pricingPlanSchema], default: [] },
   images: { type: [String] },
   address: { type: String, required: true },
-  // ✅ Complete Amenities with all fields
+ // ✅ Complete Amenities with all fields
   amenities: {
     // Normal Amenities (4)
     wifi: { type: Boolean, default: false },
     parking: { type: Boolean, default: false },
     lockers: { type: Boolean, default: false },
     comfortSeating: { type: Boolean, default: false },
-
+    
     // Exclusive Amenities (Additional 8)
     privateWashroom: { type: Boolean, default: false },
-    secureAccess: { type: Boolean, default: false },
+    secureAccess: { type: Boolean, default: false },    
     coffee: { type: Boolean, default: false },
     gym: { type: Boolean, default: false },
     ac: { type: Boolean, default: false },
@@ -39,6 +142,18 @@ const cabinSchema = new mongoose.Schema({
     phone: { type: Boolean, default: false },
   },
   cabinType: { type: String, enum: ['normal', 'exclusive'], default: 'normal' }, // ✅ New field
+
+  // ✅ Space Type & Spec Identification
+  cabin: { type: String },                    // e.g. "Table 4", "Cabin B", "Chamber 101"
+  tableNumber: { type: String },              // e.g. "Table #4", "T-01"
+  isCafe: { type: Boolean, default: false },  // ✅ Cafe / Dining table space
+  isChamber: { type: Boolean, default: false }, // ✅ Doctor chamber space
+
+  // ✅ Timings & Media
+  openTime: { type: String, default: "09:00" },
+  closeTime: { type: String, default: "21:00" },
+  is24x7: { type: Boolean, default: false },
+  videos: { type: [String], default: [] },
 
   // ✅ SEATS FIELD - NEW
   seats: {
@@ -54,8 +169,9 @@ const cabinSchema = new mongoose.Schema({
     }],
     default: [],
     validate: {
-      validator: function (seats) {
+      validator: function(seats) {
         // Check if all seat numbers are unique
+        if (!seats || seats.length === 0) return true;
         const numbers = seats.map(s => s.number);
         return numbers.length === new Set(numbers).size;
       },
@@ -63,8 +179,8 @@ const cabinSchema = new mongoose.Schema({
     }
   },
   // ✅ Status fields
-  isActive: {
-    type: Boolean,
+  isActive: { 
+    type: Boolean, 
     default: true           // ✅ Active by default
   },
 
@@ -72,27 +188,6 @@ const cabinSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
-
-  // ✅ NEW: Video Upload Support
-  videos: { type: [String], default: [] },
-
-  // ✅ NEW: Open/Close Time (Replaces Seats)
-  openTime: {
-    type: String,
-    default: '09:00'
-  },
-  closeTime: {
-    type: String,
-    default: '21:00'
-  },
-  is24x7: { type: Boolean, default: false },
-
-  // models/Cabin.js - Add this field
-  isChamber: {
-    type: Boolean,
-    default: false
-  },
-
 
   createdAt: { type: Date, default: Date.now },
 });
