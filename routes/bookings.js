@@ -1485,6 +1485,7 @@ router.get("/", async (req, res) => {
           images: bookingObj.cabinId.images || [],
           isActive: bookingObj.cabinId.isActive || false,
           isChamber: bookingObj.cabinId.isChamber || false,
+          isCafe: bookingObj.cabinId.isCafe || false,
           amenities: bookingObj.cabinId.amenities || {},
           description: bookingObj.cabinId.description || '',
           location: bookingObj.cabinId.location || {
@@ -1681,10 +1682,13 @@ router.get("/user", auth, async (req, res) => {
     console.log(`👤 Current Session userId: ${userId}`);
     console.log("-----------------------------------------");
 
-    const bookings = await Booking.find({ userId })
+    const bookings = await Booking.find({
+  userId,
+  bookingType: { $ne: "visit" }
+})
       .populate({
         path: "cabinId",
-        select: "name address price capacity cabinType images seats isActive isChamber amenities description location",
+        select: "name address price capacity cabinType images seats isActive isChamber isCafe amenities description location",
         populate: {
           path: "owner",
           model: "User",
@@ -1750,6 +1754,7 @@ router.get("/user", auth, async (req, res) => {
           images: bookingObj.cabinId.images || [],
           isActive: bookingObj.cabinId.isActive || false,
           isChamber: bookingObj.cabinId.isChamber || false, // ✅ ADDED isChamber
+          isCafe: bookingObj.cabinId.isCafe || false,
           amenities: bookingObj.cabinId.amenities || [],
           description: bookingObj.cabinId.description || '',
           location: bookingObj.cabinId.location || {
@@ -1885,6 +1890,530 @@ router.get("/user", auth, async (req, res) => {
   } catch (err) {
     console.error("❌ Error fetching bookings:", err);
     res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+
+
+
+
+// ======================
+// GET VISIT BOOKINGS BY USER ID (CUSTOMER)
+// ======================
+router.get("/user/visits", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    console.log("-----------------------------------------");
+    console.log(`📡 API REQUEST: GET /api/bookings/user/visits`);
+    console.log(`👤 Current Session userId: ${userId}`);
+    console.log("-----------------------------------------");
+
+    const bookings = await Booking.find({
+      userId,
+      bookingType: "visit"
+    })
+      .populate({
+        path: "cabinId",
+        select:
+          "name address price capacity cabinType images seats isActive isChamber isCafe amenities description location",
+        populate: {
+          path: "owner",
+          model: "User",
+          select:
+            "name email mobile address organizationName profileImage"
+        }
+      })
+      .sort({ createdAt: -1 });
+
+    console.log("📦 Visit bookings count:", bookings.length);
+
+    // Same formatting as existing API
+    const formattedBookings = bookings.map(booking => {
+      const bookingObj = booking.toObject();
+
+      // POPULATE SELECTED SEATS
+      let populatedSelectedSeats = [];
+
+      if (
+        bookingObj.selectedSeats &&
+        Array.isArray(bookingObj.selectedSeats) &&
+        bookingObj.selectedSeats.length > 0
+      ) {
+        if (
+          bookingObj.cabinId &&
+          bookingObj.cabinId.seats &&
+          Array.isArray(bookingObj.cabinId.seats)
+        ) {
+          const selectedIds = bookingObj.selectedSeats.map(id =>
+            id.toString()
+          );
+
+          populatedSelectedSeats = bookingObj.cabinId.seats
+            .filter(seat => {
+              const seatId = seat._id
+                ? seat._id.toString()
+                : seat.toString();
+
+              return selectedIds.includes(seatId);
+            })
+            .map(seat => ({
+              _id: seat._id || seat,
+              name: seat.name || "Unknown Seat",
+              number: seat.number || 0,
+              type: seat.type || "standard",
+              isActive:
+                seat.isActive !== undefined ? seat.isActive : true
+            }));
+        }
+      }
+
+      // FORMAT BOOKING SLOTS
+      let formattedSlots = [];
+
+      if (
+        bookingObj.bookingSlots &&
+        Array.isArray(bookingObj.bookingSlots)
+      ) {
+        formattedSlots = bookingObj.bookingSlots.map(slot => ({
+          date: slot.date || "",
+          startTime: slot.startTime || "",
+          endTime: slot.endTime || "",
+          hours: slot.hours || 0
+        }));
+      }
+
+      return {
+        // BASIC INFO
+        _id: bookingObj._id,
+        bookingType: bookingObj.bookingType || "visit",
+        bookingBasis: bookingObj.bookingBasis || "hourly",
+
+        // CABIN DETAILS
+        cabin: bookingObj.cabinId
+          ? {
+              _id: bookingObj.cabinId._id,
+              name: bookingObj.cabinId.name || "N/A",
+              address: bookingObj.cabinId.address || "N/A",
+              price: bookingObj.cabinId.price || 0,
+              capacity: bookingObj.cabinId.capacity || 0,
+              cabinType: bookingObj.cabinId.cabinType || "normal",
+              images: bookingObj.cabinId.images || [],
+              isActive: bookingObj.cabinId.isActive || false,
+              isChamber: bookingObj.cabinId.isChamber || false,
+              isCafe: bookingObj.cabinId.isCafe || false,
+              amenities: bookingObj.cabinId.amenities || [],
+              description: bookingObj.cabinId.description || "",
+              location: bookingObj.cabinId.location || {
+                lat: 0,
+                lng: 0,
+                address: ""
+              },
+
+              owner: bookingObj.cabinId.owner
+                ? {
+                    _id: bookingObj.cabinId.owner._id,
+                    name: bookingObj.cabinId.owner.name,
+                    email: bookingObj.cabinId.owner.email,
+                    mobile: bookingObj.cabinId.owner.mobile,
+                    address: bookingObj.cabinId.owner.address,
+                    organizationName:
+                      bookingObj.cabinId.owner.organizationName || "",
+                    profileImage:
+                      bookingObj.cabinId.owner.profileImage || ""
+                  }
+                : null
+            }
+          : null,
+
+        // USER DETAILS
+        userId: bookingObj.userId,
+        name: bookingObj.name || "",
+        mobile: bookingObj.mobile || "",
+        email: bookingObj.email || "",
+        ownerId: bookingObj.ownerId || null,
+
+        // DATE & TIME
+        startDate: bookingObj.startDate,
+        startTime: bookingObj.startTime,
+        endDate: bookingObj.endDate,
+        endTime: bookingObj.endTime,
+
+        // HOURS
+        totalHours: bookingObj.totalHours || 0,
+        remainingHours: bookingObj.remainingHours || 0,
+        hoursUsed: bookingObj.hoursUsed || 0,
+
+        // MULTI-DAY SLOTS
+        bookingSlots: formattedSlots,
+        totalDays: bookingObj.totalDays || 0,
+        dailyHours: bookingObj.dailyHours || [],
+
+        // PRICING
+        subtotal: bookingObj.subtotal || 0,
+        gstAmount: bookingObj.gstAmount || 0,
+        gstRate: bookingObj.gstRate || 0.18,
+        totalPrice: bookingObj.totalPrice || 0,
+
+        // SEATS
+        selectedSeats: populatedSelectedSeats,
+        selectedSeatIds: bookingObj.selectedSeats || [],
+        seatCount: bookingObj.seatCount || 0,
+        extraCharge: bookingObj.extraCharge || 0,
+        seatExtraChargePerSeat:
+          bookingObj.seatExtraChargePerSeat || 100,
+
+        // PLAN
+        selectedPlan: bookingObj.selectedPlan
+          ? {
+              _id: bookingObj.selectedPlan._id,
+              label: bookingObj.selectedPlan.label || "",
+              hours: bookingObj.selectedPlan.hours || 0,
+              cost: bookingObj.selectedPlan.cost || 0,
+              validity: bookingObj.selectedPlan.validity || 0,
+              description: bookingObj.selectedPlan.description || ""
+            }
+          : null,
+
+        // STATUS
+        status: bookingObj.status || "pending",
+        paymentMethod: bookingObj.paymentMethod || "cash",
+        paymentStatus: bookingObj.paymentStatus || "pending",
+        isPaidToOwner: bookingObj.isPaidToOwner || false,
+
+        // PAYMENT DETAILS
+        transactionId: bookingObj.transactionId || null,
+        razorpayOrderId: bookingObj.razorpayOrderId || null,
+        razorpayPaymentId: bookingObj.razorpayPaymentId || null,
+        razorpaySignature: bookingObj.razorpaySignature || null,
+
+        paymentDetails: bookingObj.paymentDetails
+          ? {
+              mode: bookingObj.paymentDetails.mode || null,
+              transactionId:
+                bookingObj.paymentDetails.transactionId || null,
+              paymentDate:
+                bookingObj.paymentDetails.paymentDate || null,
+              upiId: bookingObj.paymentDetails.upiId || null,
+              upiApp: bookingObj.paymentDetails.upiApp || null,
+              screenshot:
+                bookingObj.paymentDetails.screenshot || null,
+              bankName:
+                bookingObj.paymentDetails.bankName || null,
+              accountNumber:
+                bookingObj.paymentDetails.accountNumber || null,
+              ifscCode:
+                bookingObj.paymentDetails.ifscCode || null
+            }
+          : null,
+
+        // TERMS
+        termsAccepted: bookingObj.termsAccepted || false,
+
+        // TIMESTAMPS
+        createdAt: bookingObj.createdAt,
+        updatedAt: bookingObj.updatedAt,
+
+        // CANCELLATION
+        cancellationReason:
+          bookingObj.cancellationReason || null,
+        cancelledAt: bookingObj.cancelledAt || null,
+        cancelledBy: bookingObj.cancelledBy || null,
+
+        // REVIEW
+        review: bookingObj.review || null,
+        rating: bookingObj.rating || null,
+        reviewGiven: bookingObj.reviewGiven || false,
+
+        // ADDITIONAL
+        bookingCode: bookingObj.bookingCode || null,
+        qrCode: bookingObj.qrCode || null,
+        checkInTime: bookingObj.checkInTime || null,
+        checkOutTime: bookingObj.checkOutTime || null,
+        actualCheckIn: bookingObj.actualCheckIn || null,
+        actualCheckOut: bookingObj.actualCheckOut || null,
+        isExtended: bookingObj.isExtended || false,
+        extensionDetails: bookingObj.extensionDetails || null,
+
+        // NOTIFICATIONS
+        notifications: bookingObj.notifications || {
+          bookingConfirmed: false,
+          paymentReceived: false,
+          reminderSent: false,
+          checkInReminder: false,
+          checkOutReminder: false
+        }
+      };
+    });
+
+    console.log(
+      `✅ Visit bookings: Found ${formattedBookings.length} bookings for user ${userId}`
+    );
+
+    res.status(200).json({
+      success: true,
+      bookings: formattedBookings,
+      total: formattedBookings.length
+    });
+  } catch (err) {
+    console.error("❌ Error fetching visit bookings:", err);
+
+    res.status(500).json({
+      error: "Failed to fetch visit bookings"
+    });
+  }
+});
+
+
+
+
+// ======================
+// USER DASHBOARD API - SEPARATE ENDPOINT
+// ======================
+
+// 📌 GET USER DASHBOARD DATA
+router.get("/user/dashboard", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log("-----------------------------------------");
+    console.log(`📡 API REQUEST: GET /api/user/dashboard`);
+    console.log(`👤 Current Session userId: ${userId}`);
+    console.log("-----------------------------------------");
+
+    // ============================================
+    // 1. FETCH ALL BOOKINGS (CABIN + VISIT)
+    // ============================================
+    const allBookings = await Booking.find({
+      userId: userId
+    })
+      .populate({
+        path: "cabinId",
+        select: "name address price capacity cabinType images isActive isChamber isCafe amenities description location owner",
+        populate: {
+          path: "owner",
+          model: "User",
+          select: "name email mobile address organizationName profileImage"
+        }
+      })
+      .sort({ createdAt: -1 });
+
+    console.log(`📦 Total bookings found: ${allBookings.length}`);
+
+    // ============================================
+    // 2. SEPARATE CABIN BOOKINGS & VISIT BOOKINGS
+    // ============================================
+    const cabinBookings = allBookings.filter(b => b.bookingType !== 'visit');
+    const visitBookings = allBookings.filter(b => b.bookingType === 'visit');
+
+    console.log(`📦 Cabin bookings: ${cabinBookings.length}`);
+    console.log(`📦 Visit bookings: ${visitBookings.length}`);
+
+    // ============================================
+    // 3. CALCULATE STATUS DISTRIBUTION
+    // ============================================
+    const statusDistribution = {
+      pending: 0,
+      confirmed: 0,
+      active: 0,
+      completed: 0,
+      cancelled: 0
+    };
+
+    allBookings.forEach(booking => {
+      const status = booking.status?.toLowerCase() || 'pending';
+      if (status === 'active') {
+        statusDistribution.active += 1;
+      } else if (status === 'confirmed') {
+        statusDistribution.confirmed += 1;
+      } else if (status === 'cancelled') {
+        statusDistribution.cancelled += 1;
+      } else if (status === 'completed') {
+        statusDistribution.completed += 1;
+      } else {
+        statusDistribution.pending += 1;
+      }
+    });
+
+    // ============================================
+    // 4. CALCULATE TOTAL SPENT (CABIN PAYMENTS)
+    // ============================================
+    let totalSpent = 0;
+    cabinBookings.forEach(booking => {
+      if (booking.paymentStatus === 'paid') {
+        totalSpent += (booking.totalPrice || 0);
+      }
+    });
+
+    // ============================================
+    // 5. FETCH CABIN PAYMENTS (MY CABINS)
+    // ============================================
+    // User ke cabins jo usne register kiye hain
+    const userCabins = await Cabin.find({
+      owner: userId
+    }).select("_id name address price capacity cabinType images isActive seats");
+
+    const myCabinsCount = userCabins.length;
+    const totalCabins = userCabins.reduce((sum, c) => sum + (parseInt(c.capacity) || 0), 0);
+
+    // ============================================
+    // 6. FETCH CABIN BOOKINGS (ON MY CABINS)
+    // ============================================
+    const cabinIds = userCabins.map(c => c._id);
+    
+    const myCabinBookings = await Booking.find({
+      cabinId: { $in: cabinIds },
+      bookingType: { $ne: "visit" }
+    })
+      .populate({
+        path: "cabinId",
+        select: "name address price"
+      })
+      .sort({ createdAt: -1 });
+
+    const cabinBookingsCount = myCabinBookings.length;
+    
+    // Calculate cabin revenue
+    let cabinRevenue = 0;
+    myCabinBookings.forEach(booking => {
+      if (booking.paymentStatus === 'paid') {
+        cabinRevenue += (booking.totalPrice || 0);
+      }
+    });
+
+    // ============================================
+    // 7. WALLET DATA (if applicable)
+    // ============================================
+    const walletData = {
+      balance: 0,
+      totalEarned: cabinRevenue,
+      transactions: myCabinBookings.length,
+      withdrawals: 0
+    };
+
+    // ============================================
+    // 8. RECENT BOOKINGS (LAST 10)
+    // ============================================
+    const recentBookings = cabinBookings.slice(0, 10).map(booking => {
+      const bookingObj = booking.toObject();
+      return {
+        _id: bookingObj._id,
+        bookingType: bookingObj.bookingType || 'cabin',
+        cabinName: bookingObj.cabinId?.name || 'Unknown Cabin',
+        address: bookingObj.cabinId?.address || 'N/A',
+        startDate: bookingObj.startDate,
+        startTime: bookingObj.startTime,
+        endDate: bookingObj.endDate,
+        endTime: bookingObj.endTime,
+        status: bookingObj.status || 'pending',
+        totalPrice: bookingObj.totalPrice || 0,
+        amount: bookingObj.totalPrice || 0,
+        paymentStatus: bookingObj.paymentStatus || 'pending',
+        createdAt: bookingObj.createdAt,
+        name: bookingObj.name || 'N/A',
+        mobile: bookingObj.mobile || 'N/A',
+        email: bookingObj.email || 'N/A'
+      };
+    });
+
+    // ============================================
+    // 9. RECENT CABIN BOOKINGS (ON MY CABINS)
+    // ============================================
+    const recentCabinBookings = myCabinBookings.slice(0, 10).map(booking => {
+      const bookingObj = booking.toObject();
+      return {
+        _id: bookingObj._id,
+        cabinName: bookingObj.cabinId?.name || 'Unknown Cabin',
+        address: bookingObj.cabinId?.address || 'N/A',
+        name: bookingObj.name || 'N/A',
+        mobile: bookingObj.mobile || 'N/A',
+        email: bookingObj.email || 'N/A',
+        startDate: bookingObj.startDate,
+        startTime: bookingObj.startTime,
+        endDate: bookingObj.endDate,
+        endTime: bookingObj.endTime,
+        status: bookingObj.status || 'pending',
+        totalPrice: bookingObj.totalPrice || 0,
+        amount: bookingObj.totalPrice || 0,
+        paymentStatus: bookingObj.paymentStatus || 'pending',
+        createdAt: bookingObj.createdAt
+      };
+    });
+
+    // ============================================
+    // 10. MONTHLY BOOKING CHART DATA
+    // ============================================
+    const monthMap = {};
+    allBookings.forEach(booking => {
+      if (!booking.createdAt) return;
+      const date = new Date(booking.createdAt);
+      const monthName = date.toLocaleString('default', { month: 'short' });
+      
+      if (!monthMap[monthName]) {
+        monthMap[monthName] = { month: monthName, bookings: 0 };
+      }
+      monthMap[monthName].bookings += 1;
+    });
+    const bookingChartData = Object.values(monthMap);
+
+    // ============================================
+    // 11. MONTHLY STATS
+    // ============================================
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const bookingsThisMonth = allBookings.filter(b => {
+      const date = new Date(b.createdAt);
+      return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    }).length;
+
+    // ============================================
+    // 12. RESPONSE
+    // ============================================
+    const responseData = {
+      success: true,
+      data: {
+        // Total counts
+        totalBookings: allBookings.length,
+        totalSpent: totalSpent,
+        myCabinsCount: myCabinsCount,
+        cabinBookingsCount: cabinBookingsCount,
+        cabinRevenue: cabinRevenue,
+        totalCabins: totalCabins,
+        
+        // Wallet
+        wallet: walletData,
+        
+        // Status distribution
+        statusDistribution: statusDistribution,
+        
+        // Recent bookings
+        recentBookings: recentBookings,
+        recentCabinBookings: recentCabinBookings,
+        
+        // Chart data
+        bookingChartData: bookingChartData,
+        
+        // Monthly stats
+        monthlyStats: {
+          bookingsThisMonth: bookingsThisMonth,
+          spentThisMonth: totalSpent,
+          earningsThisMonth: cabinRevenue,
+          growth: 0
+        }
+      }
+    };
+
+    console.log(`✅ Dashboard data prepared successfully for user ${userId}`);
+    res.status(200).json(responseData);
+
+  } catch (err) {
+    console.error("❌ Error fetching dashboard data:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to fetch dashboard data",
+      message: err.message 
+    });
   }
 });
 

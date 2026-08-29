@@ -1370,6 +1370,47 @@ router.get('/all-cabinpayments', async (req, res) => {
   }
 });
 
+
+
+// ─── 2. GET ALL QUERIES ───
+router.get('/allqueries', async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10 } = req.query;
+
+    const filter = {};
+    if (status) filter.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const limitNum = parseInt(limit);
+
+    const queries = await Query.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    const total = await Query.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      data: queries,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Get all queries error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch queries',
+      error: error.message
+    });
+  }
+});
+
+
 // ======================
 // 2. GET MY CABIN PAYMENTS - SPECIFIC ROUTE
 // ======================
@@ -2069,43 +2110,6 @@ router.post('/sendquery', async (req, res) => {
   }
 });
 
-// ─── 2. GET ALL QUERIES ───
-router.get('/allqueries', async (req, res) => {
-  try {
-    const { status, page = 1, limit = 10 } = req.query;
-
-    const filter = {};
-    if (status) filter.status = status;
-
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    const limitNum = parseInt(limit);
-
-    const queries = await Query.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
-
-    const total = await Query.countDocuments(filter);
-
-    res.status(200).json({
-      success: true,
-      data: queries,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
-      }
-    });
-  } catch (error) {
-    console.error('Get all queries error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch queries',
-      error: error.message
-    });
-  }
-});
 
 // ─── 3. UPDATE QUERY STATUS ───
 router.patch('/updatequery/:id', async (req, res) => {
