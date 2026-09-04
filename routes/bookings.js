@@ -2417,22 +2417,224 @@ router.get("/user/dashboard", auth, async (req, res) => {
   }
 });
 
-// Using the old route as fallback or for specific user fetch if needed (optional)
+// ======================
+// GET BOOKINGS BY USER ID (USERBOOKINGS/:USERID) - WITH FULL FIELDS
+// ======================
 router.get("/userbookings/:userId", async (req, res) => {
-  // ... existing logic ...
   try {
     const { userId } = req.params;
+    console.log("-----------------------------------------");
+    console.log(`📡 API REQUEST: GET /api/bookings/userbookings/${userId}`);
+    console.log(`👤 UserId: ${userId}`);
+    console.log("-----------------------------------------");
+
     const bookings = await Booking.find({ userId })
-      .populate("cabinId", "name address capacity price images")
+      .populate({
+        path: "cabinId",
+        select: "name address price capacity cabinType images seats isActive isChamber isCafe amenities description location",
+        populate: {
+          path: "owner",
+          model: "User",
+          select: "name email mobile address organizationName profileImage"
+        }
+      })
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ bookings });
+    console.log("📦 Raw bookings count:", bookings.length);
+
+    // ✅ Format bookings with ALL fields - SAME AS /user ROUTE
+    const formattedBookings = bookings.map(booking => {
+      const bookingObj = booking.toObject();
+      
+      // ✅ POPULATE SELECTED SEATS WITH FULL DETAILS
+      let populatedSelectedSeats = [];
+      
+      if (bookingObj.selectedSeats && Array.isArray(bookingObj.selectedSeats) && bookingObj.selectedSeats.length > 0) {
+        if (bookingObj.cabinId && bookingObj.cabinId.seats && Array.isArray(bookingObj.cabinId.seats)) {
+          const selectedIds = bookingObj.selectedSeats.map(id => id.toString());
+          
+          populatedSelectedSeats = bookingObj.cabinId.seats
+            .filter(seat => {
+              const seatId = seat._id ? seat._id.toString() : seat.toString();
+              return selectedIds.includes(seatId);
+            })
+            .map(seat => ({
+              _id: seat._id || seat,
+              name: seat.name || 'Unknown Seat',
+              number: seat.number || 0,
+              type: seat.type || 'standard',
+              isActive: seat.isActive !== undefined ? seat.isActive : true
+            }));
+        }
+      }
+
+      // ✅ Format booking slots
+      let formattedSlots = [];
+      if (bookingObj.bookingSlots && Array.isArray(bookingObj.bookingSlots)) {
+        formattedSlots = bookingObj.bookingSlots.map(slot => ({
+          date: slot.date || '',
+          startTime: slot.startTime || '',
+          endTime: slot.endTime || '',
+          hours: slot.hours || 0
+        }));
+      }
+
+      // ✅ Return COMPLETE data with ALL fields
+      return {
+        // ✅ BASIC INFO
+        _id: bookingObj._id,
+        bookingType: bookingObj.bookingType || 'cabin',
+        bookingBasis: bookingObj.bookingBasis || 'hourly',
+        
+        // ✅ CABIN DETAILS
+        cabin: bookingObj.cabinId ? {
+          _id: bookingObj.cabinId._id,
+          name: bookingObj.cabinId.name || 'N/A',
+          address: bookingObj.cabinId.address || 'N/A',
+          price: bookingObj.cabinId.price || 0,
+          capacity: bookingObj.cabinId.capacity || 0,
+          cabinType: bookingObj.cabinId.cabinType || 'normal',
+          images: bookingObj.cabinId.images || [],
+          isActive: bookingObj.cabinId.isActive || false,
+          isChamber: bookingObj.cabinId.isChamber || false,
+          isCafe: bookingObj.cabinId.isCafe || false,
+          amenities: bookingObj.cabinId.amenities || [],
+          description: bookingObj.cabinId.description || '',
+          location: bookingObj.cabinId.location || {
+            lat: 0,
+            lng: 0,
+            address: ''
+          },
+          owner: bookingObj.cabinId.owner ? {
+            _id: bookingObj.cabinId.owner._id,
+            name: bookingObj.cabinId.owner.name,
+            email: bookingObj.cabinId.owner.email,
+            mobile: bookingObj.cabinId.owner.mobile,
+            address: bookingObj.cabinId.owner.address,
+            organizationName: bookingObj.cabinId.owner.organizationName || '',
+            profileImage: bookingObj.cabinId.owner.profileImage || ''
+          } : null
+        } : null,
+        
+        // ✅ USER DETAILS
+        userId: bookingObj.userId,
+        name: bookingObj.name || '',
+        mobile: bookingObj.mobile || '',
+        email: bookingObj.email || '',
+        ownerId: bookingObj.ownerId || null,
+        
+        // ✅ DATE & TIME
+        startDate: bookingObj.startDate,
+        startTime: bookingObj.startTime,
+        endDate: bookingObj.endDate,
+        endTime: bookingObj.endTime,
+        
+        // ✅ HOURS
+        totalHours: bookingObj.totalHours || 0,
+        remainingHours: bookingObj.remainingHours || 0,
+        hoursUsed: bookingObj.hoursUsed || 0,
+        
+        // ✅ MULTI-DAY SLOTS
+        bookingSlots: formattedSlots,
+        totalDays: bookingObj.totalDays || 0,
+        dailyHours: bookingObj.dailyHours || [],
+        
+        // ✅ PRICING
+        subtotal: bookingObj.subtotal || 0,
+        gstAmount: bookingObj.gstAmount || 0,
+        gstRate: bookingObj.gstRate || 0.18,
+        totalPrice: bookingObj.totalPrice || 0,
+        
+        // ✅ SEAT DETAILS
+        selectedSeats: populatedSelectedSeats,
+        selectedSeatIds: bookingObj.selectedSeats || [],
+        seatCount: bookingObj.seatCount || 0,
+        extraCharge: bookingObj.extraCharge || 0,
+        seatExtraChargePerSeat: bookingObj.seatExtraChargePerSeat || 100,
+        
+        // ✅ PLAN DETAILS
+        selectedPlan: bookingObj.selectedPlan ? {
+          _id: bookingObj.selectedPlan._id,
+          label: bookingObj.selectedPlan.label || '',
+          hours: bookingObj.selectedPlan.hours || 0,
+          cost: bookingObj.selectedPlan.cost || 0,
+          validity: bookingObj.selectedPlan.validity || 0,
+          description: bookingObj.selectedPlan.description || ''
+        } : null,
+        
+        // ✅ STATUS
+        status: bookingObj.status || 'pending',
+        paymentMethod: bookingObj.paymentMethod || 'cash',
+        paymentStatus: bookingObj.paymentStatus || 'pending',
+        isPaidToOwner: bookingObj.isPaidToOwner || false,
+        
+        // ✅ PAYMENT DETAILS
+        transactionId: bookingObj.transactionId || null,
+        razorpayOrderId: bookingObj.razorpayOrderId || null,
+        razorpayPaymentId: bookingObj.razorpayPaymentId || null,
+        razorpaySignature: bookingObj.razorpaySignature || null,
+        paymentDetails: bookingObj.paymentDetails ? {
+          mode: bookingObj.paymentDetails.mode || null,
+          transactionId: bookingObj.paymentDetails.transactionId || null,
+          paymentDate: bookingObj.paymentDetails.paymentDate || null,
+          upiId: bookingObj.paymentDetails.upiId || null,
+          upiApp: bookingObj.paymentDetails.upiApp || null,
+          screenshot: bookingObj.paymentDetails.screenshot || null,
+          bankName: bookingObj.paymentDetails.bankName || null,
+          accountNumber: bookingObj.paymentDetails.accountNumber || null,
+          ifscCode: bookingObj.paymentDetails.ifscCode || null
+        } : null,
+        
+        // ✅ TERMS & CONDITIONS
+        termsAccepted: bookingObj.termsAccepted || false,
+        
+        // ✅ TIMESTAMPS
+        createdAt: bookingObj.createdAt,
+        updatedAt: bookingObj.updatedAt,
+        
+        // ✅ CANCELLATION INFO
+        cancellationReason: bookingObj.cancellationReason || null,
+        cancelledAt: bookingObj.cancelledAt || null,
+        cancelledBy: bookingObj.cancelledBy || null,
+        
+        // ✅ REVIEW & RATING
+        review: bookingObj.review || null,
+        rating: bookingObj.rating || null,
+        reviewGiven: bookingObj.reviewGiven || false,
+        
+        // ✅ ADDITIONAL FIELDS
+        bookingCode: bookingObj.bookingCode || null,
+        qrCode: bookingObj.qrCode || null,
+        checkInTime: bookingObj.checkInTime || null,
+        checkOutTime: bookingObj.checkOutTime || null,
+        actualCheckIn: bookingObj.actualCheckIn || null,
+        actualCheckOut: bookingObj.actualCheckOut || null,
+        isExtended: bookingObj.isExtended || false,
+        extensionDetails: bookingObj.extensionDetails || null,
+        
+        // ✅ NOTIFICATIONS
+        notifications: bookingObj.notifications || {
+          bookingConfirmed: false,
+          paymentReceived: false,
+          reminderSent: false,
+          checkInReminder: false,
+          checkOutReminder: false
+        }
+      };
+    });
+
+    console.log(`✅ Bookings: Found ${formattedBookings.length} bookings for user ${userId}`);
+    
+    res.status(200).json({ 
+      success: true,
+      bookings: formattedBookings,
+      total: formattedBookings.length
+    });
   } catch (err) {
-    console.log(err);
+    console.error("❌ Error fetching bookings:", err);
     res.status(500).json({ error: "Failed to fetch bookings" });
   }
 });
-
 
 
 router.put("/update-status/:bookingId", async (req, res) => {
