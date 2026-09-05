@@ -8,6 +8,7 @@ const authRoutes = require("./routes/auth");
 const cabinRoutes = require("./routes/cabins");
 const adminRoutes = require("./routes/admin");
 const bookingRoutes = require("./routes/bookings");
+const surveyRoutes = require("./routes/surveys");
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/cabins", cabinRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/surveys", surveyRoutes);
 
 // ============================================
 // 📌 FUNCTION - COMPLETE EXPIRED BOOKINGS
