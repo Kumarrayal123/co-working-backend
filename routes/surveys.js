@@ -15,7 +15,8 @@ router.post('/submitsurvey', async (req, res) => {
       spaceType,
       mobileNumber,
       address,
-      submittedBy
+      submittedBy,
+      surveyAnswers
     } = req.body;
 
     console.log('📝 Received survey data:', JSON.stringify(req.body, null, 2));
@@ -43,6 +44,33 @@ router.post('/submitsurvey', async (req, res) => {
           success: false, 
           message: 'Number of tables is required for cafes' 
         });
+      }
+    }
+
+    // Validate time ranges
+    if (surveyAnswers) {
+      // Validate busiest hours
+      if (surveyAnswers.busiestStartTime && surveyAnswers.busiestEndTime) {
+        const start = new Date(`2000-01-01 ${surveyAnswers.busiestStartTime}`);
+        const end = new Date(`2000-01-01 ${surveyAnswers.busiestEndTime}`);
+        if (start >= end) {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Busiest hours end time must be after start time' 
+          });
+        }
+      }
+
+      // Validate slowest hours
+      if (surveyAnswers.slowestStartTime && surveyAnswers.slowestEndTime) {
+        const start = new Date(`2000-01-01 ${surveyAnswers.slowestStartTime}`);
+        const end = new Date(`2000-01-01 ${surveyAnswers.slowestEndTime}`);
+        if (start >= end) {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Slowest hours end time must be after start time' 
+          });
+        }
       }
     }
 
@@ -96,7 +124,6 @@ router.post('/submitsurvey', async (req, res) => {
     });
   }
 });
-
 // Get all surveys (optionally with pagination)
 router.get('/allsurveys', async (req, res) => {
   try {

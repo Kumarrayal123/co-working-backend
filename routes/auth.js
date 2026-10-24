@@ -372,6 +372,28 @@ router.post("/reset-password", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
+
+    // ==========================================
+    // 👇 YAHAN SE NAYA CODE ADD KAREIN 👇
+    // ==========================================
+    
+    // Agar purane users ke paas notifications array nahi hai, toh initialize karein
+    if (!user.notifications) {
+      user.notifications = [];
+    }
+
+    // Notification push karein
+    user.notifications.push({
+      title: "Password Updated 🔒",
+      message: "Your account password has been reset successfully. If you did not make this change, please contact support immediately.",
+      isRead: false,
+      time: new Date()
+    });
+
+    // ==========================================
+    // 👆 NAYA CODE KHATAM 👆
+    // ==========================================
+
     await user.save();
 
     res.json({
@@ -387,7 +409,6 @@ router.post("/reset-password", async (req, res) => {
     });
   }
 });
-
 
 
 // ============================================
@@ -671,5 +692,105 @@ router.get("/profile/:id", async (req, res) => {
   }
 });
 
+
+
+
+// ============================================
+// 3. GET USER NOTIFICATIONS
+// ============================================
+router.get("/get-notifications/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // User ko database se fetch karein
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Agar purane user ke paas notifications array nahi hai, toh empty array return karein
+    let userNotifications = user.notifications || [];
+
+    // Notifications ko latest time ke hisaab se sort karein (Newest first)
+    userNotifications.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+    // Kitne notifications unread hain (Red dot ke liye)
+    const unreadCount = userNotifications.filter(n => !n.isRead).length;
+
+    res.status(200).json({
+      success: true,
+      count: userNotifications.length,
+      unreadCount: unreadCount,
+      notifications: userNotifications
+    });
+
+  } catch (err) {
+    console.error("❌ Get Notifications Error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch notifications",
+      details: err.message
+    });
+  }
+});
+
+
+
+// ============================================
+// 5. DELETE NOTIFICATIONS (Single or Multiple)
+// ============================================
+router.delete("/delete-notifications/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { notificationIds } = req.body;
+
+    // 1. Validation: Check karein ki array aaya hai ya nahi
+    if (!notificationIds || !Array.isArray(notificationIds) || notificationIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of notificationIds to delete"
+      });
+    }
+
+    // 2. Database Update: $pull use karke array se specific IDs remove karein
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        $pull: {
+          notifications: { 
+            _id: { $in: notificationIds } // $in matlab jitni bhi IDs array me hain, sabko match karke pull karo
+          } 
+        }
+      },
+      { new: true } // Update hone ke baad naya user data return karega
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // 3. Success Response
+    res.status(200).json({
+      success: true,
+      message: `${notificationIds.length} notification(s) deleted successfully`,
+      remainingNotifications: updatedUser.notifications || []
+    });
+
+  } catch (err) {
+    console.error("❌ Delete Notification Error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete notifications",
+      details: err.message
+    });
+  }
+});
 
 module.exports = router;

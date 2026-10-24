@@ -922,6 +922,44 @@ router.post("/createbooking/:userId", async (req, res) => {
     const booking = new Booking(bookingData);
     await booking.save();
 
+
+     try {
+      // Date ko sundar format mein badlein (e.g. 24 Oct 2026)
+      const formattedDate = new Date(startDate).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
+
+      let notifTitle = "Booking Confirmed 🎉";
+      let notifMessage = `Your booking at ${cabin.name} on ${formattedDate} has been confirmed.`;
+
+      // Agar online payment hai, toh status abhi pending hoga
+      if (paymentMethod === 'online') {
+        notifTitle = "Booking Initiated 💳";
+        notifMessage = `Your booking at ${cabin.name} on ${formattedDate} is created. Please complete the payment to confirm.`;
+      }
+
+      // User ke document me notification push karein
+      await User.findByIdAndUpdate(
+        userId,
+        {
+          $push: {
+            notifications: {
+              title: notifTitle,
+              message: notifMessage,
+              isRead: false,
+              time: new Date()
+            }
+          }
+        }
+      );
+    } catch (notifErr) {
+      console.error("Error saving notification:", notifErr);
+      // Agar notification save nahi bhi hota, toh booking fail nahi honi chahiye
+    }
+    // ==========================================
+    // 👆 NAYA CODE KHATAM 👆
+    // ==========================================
+
     // ✅ Response with all booking details
     const responseData = {
       success: true,
@@ -1344,14 +1382,7 @@ router.put("/cancel-booking/:bookingId", async (req, res) => {
 router.post("/createvisit/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const {
-      cabinId,
-      name,
-      mobile,
-      email,
-      startDate,
-      startTime
-    } = req.body;
+    const { cabinId, name, mobile, email, startDate, startTime } = req.body;
 
     // Validate required fields
     if (!cabinId || !name || !mobile || !startDate || !startTime) {
@@ -1361,7 +1392,7 @@ router.post("/createvisit/:userId", async (req, res) => {
       });
     }
 
-    // Create new booking with status "confirmed"
+    // Create new booking
     const booking = new Booking({
       cabinId,
       userId,
@@ -1373,10 +1404,32 @@ router.post("/createvisit/:userId", async (req, res) => {
       bookingType: "visit",
       totalHours: 0,
       totalPrice: 0,
-      status: "confirmed" // ✅ Status set to confirmed
+      status: "confirmed" 
     });
 
     await booking.save();
+
+    // 👇 YE NAYA CODE ADD KAREIN 👇
+    // Date format banayein (Jaise screenshot mein "24 Oct 2026" dikh raha hai)
+    const formattedDate = new Date(startDate).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric'
+    });
+
+    // User ke document mein notification push karein
+    await User.findByIdAndUpdate(
+      userId,
+      {
+        $push: {
+          notifications: {
+            title: "Booking Confirmed 🎉",
+            message: `Your booking at The Work Loft on ${formattedDate} has been confirmed.`,
+            isRead: false,
+            time: new Date() // Abhi ka time
+          }
+        }
+      }
+    );
+    // 👆 NAYA CODE KHATAM 👆
 
     res.status(201).json({
       success: true,
@@ -1404,7 +1457,6 @@ router.post("/createvisit/:userId", async (req, res) => {
     });
   }
 });
-
 
 // ======================
 // 3. GET ALL BOOKINGS (ADMIN)

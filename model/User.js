@@ -38,6 +38,16 @@ const userSchema = new mongoose.Schema({
 
   wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Cabin' }],
 
+   // 👇 YE NAYA FIELD ADD KAREIN 👇
+  notifications: [
+    {
+      title: { type: String,},
+      message: { type: String, },
+      isRead: { type: Boolean, default: false }, // Frontend pe red dot dikhane ke liye
+      time: { type: Date, default: Date.now }    // "2 min ago" dikhane ke liye
+    }
+  ],
+
 
   createdAt: { type: Date, default: Date.now }
 });
