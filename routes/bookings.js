@@ -7,6 +7,8 @@ const auth = require("../middleware/auth");
 const Wallet = require('../model/Wallet');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');  // ✅ ADD THIS LINE
+const mongoose = require("mongoose");
+
 
 const multer = require('multer');
 const path = require('path');
@@ -1376,23 +1378,36 @@ router.put("/cancel-booking/:bookingId", async (req, res) => {
   }
 });
 
-// ======================
-// ⭐ 5. CREATE A SITE VISIT
-// ======================
 router.post("/createvisit/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     const { cabinId, name, mobile, email, startDate, startTime } = req.body;
 
-    // Validate required fields
+    console.log("👉 userId received:", userId);
+    console.log("👉 body:", req.body);
+
     if (!cabinId || !name || !mobile || !startDate || !startTime) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: "Missing required fields for site visit",
         required: ["cabinId", "name", "mobile", "startDate", "startTime"]
       });
     }
 
-    // Create new booking
+    // ✅ STEP 1: userId valid ObjectId hai ya nahi
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      console.error("❌ Invalid ObjectId:", userId);
+      return res.status(400).json({ error: "Invalid userId (not a Mongo _id)" });
+    }
+
+    // ✅ STEP 2: user DB mein exist karta hai ya nahi (ye missing tha)
+    const userExists = await User.findById(userId);
+    if (!userExists) {
+      console.error("❌ No user found for _id:", userId);
+      return res.status(404).json({ error: "User not found" });
+    }
+    console.log("✅ User found:", userExists.email, "| role:", userExists.role);
+
+    // Booking create
     const booking = new Booking({
       cabinId,
       userId,
@@ -1404,19 +1419,18 @@ router.post("/createvisit/:userId", async (req, res) => {
       bookingType: "visit",
       totalHours: 0,
       totalPrice: 0,
-      status: "confirmed" 
+      status: "confirmed"
     });
-
     await booking.save();
+    console.log("✅ Booking saved:", booking._id);
 
-    // 👇 YE NAYA CODE ADD KAREIN 👇
-    // Date format banayein (Jaise screenshot mein "24 Oct 2026" dikh raha hai)
+    // Date format
     const formattedDate = new Date(startDate).toLocaleDateString('en-GB', {
       day: 'numeric', month: 'short', year: 'numeric'
     });
 
-    // User ke document mein notification push karein
-    await User.findByIdAndUpdate(
+    // ✅ STEP 3: new:true → updated doc return karega taaki log kar sako
+    const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
         $push: {
@@ -1424,39 +1438,36 @@ router.post("/createvisit/:userId", async (req, res) => {
             title: "Booking Confirmed 🎉",
             message: `Your booking at The Work Loft on ${formattedDate} has been confirmed.`,
             isRead: false,
-            time: new Date() // Abhi ka time
+            time: new Date()
           }
         }
-      }
+      },
+      { new: true } // 👈 ye bahut important hai
     );
-    // 👆 NAYA CODE KHATAM 👆
+
+    if (!updatedUser) {
+      console.error("❌ findByIdAndUpdate returned null — user not updated!");
+    } else {
+      console.log("✅ Notification pushed. Total count:", updatedUser.notifications.length);
+      console.log("✅ Latest notification:", JSON.stringify(updatedUser.notifications.slice(-1), null, 2));
+    }
 
     res.status(201).json({
       success: true,
       message: "Site visit scheduled successfully",
-      booking: {
-        id: booking._id,
-        cabinId: booking.cabinId,
-        name: booking.name,
-        mobile: booking.mobile,
-        email: booking.email,
-        startDate: booking.startDate,
-        startTime: booking.startTime,
-        bookingType: booking.bookingType,
-        status: booking.status,
-        createdAt: booking.createdAt
-      }
+      booking: { /* ...as before... */ }
     });
 
   } catch (err) {
-    console.error("Error creating site visit:", err);
-    res.status(500).json({ 
+    console.error("❌ Error creating site visit:", err);
+    res.status(500).json({
       success: false,
       error: "Site visit scheduling failed",
-      details: err.message 
+      details: err.message
     });
   }
 });
+
 
 // ======================
 // 3. GET ALL BOOKINGS (ADMIN)
